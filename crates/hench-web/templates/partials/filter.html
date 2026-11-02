@@ -1,0 +1,6 @@
+<form role="search" method="get" action="{{ filter_action }}" class="filter-form">
+  <label for="filter-input">{{ s.filter }}</label>
+  <input id="filter-input" type="search" name="substr" value="{{ filter_value }}" placeholder="{{ s.filter_placeholder }}" maxlength="256" autocomplete="off" spellcheck="false">
+  <button type="submit" class="btn btn-sm">{{ s.apply_filter }}</button>
+  {% if !filter_value.is_empty() %}<a class="btn btn-sm btn-ghost" href="{{ filter_action }}">{{ s.clear_filter }}</a>{% endif %}
+</form>

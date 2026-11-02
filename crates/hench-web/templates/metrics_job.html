@@ -1,0 +1,117 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<script src="{{ layout.assets.metrics_js }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<div id="metrics-root" class="metrics-root"{% if auto_refresh %} data-auto-refresh="60"{% endif %}>
+<section class="panel" aria-labelledby="job-metrics-heading">
+  <header class="panel-head">
+    <h1 id="job-metrics-heading"><a class="crumb" href="{{ back_href }}">{{ s.metrics }}</a><span class="crumb-sep" aria-hidden="true">/</span><span class="job-class">{{ class }}</span></h1>
+    <nav class="segmented" aria-label="{{ s.metrics_period }}">
+      {% for range in periods %}<a href="{{ range.href }}"{% if range.active %} aria-current="true"{% endif %}>{{ range.label }}</a>{% endfor %}
+    </nav>
+  </header>
+  {% if let Some(note) = period_note %}<p class="filter-summary">{{ note }}</p>{% endif %}
+  {% if empty %}
+  <p class="empty">{{ empty_text }}</p>
+  {% else %}
+  <dl class="facts" id="job-facts">
+    {% for fact in facts %}<div class="fact"><dt>{{ fact.label }}</dt><dd>{{ fact.value }}</dd></div>{% endfor %}
+  </dl>
+  {% endif %}
+  <p class="panel-sub metrics-window">{{ window }}{% if auto_refresh %} {{ s.auto_refresh }}{% endif %}</p>
+</section>
+
+{% if !empty %}
+<section class="panel" aria-labelledby="series-heading">
+  <header class="panel-head"><h2 id="series-heading">{{ series_title }}</h2></header>
+  <figure class="chart" id="job-series-chart" data-chart="{{ series_json }}" data-label-deploy="{{ s.deploy }}">
+    <figcaption class="chart-caption chart-caption-legend">
+      <span class="chart-title sr-only">{{ series_title }}</span>
+      <span class="legend" data-legend aria-hidden="true"></span>
+    </figcaption>
+    <div class="chart-plot" data-chart-plot></div>
+  </figure>
+</section>
+
+<section class="panel" aria-labelledby="distribution-heading">
+  <header class="panel-head">
+    <div>
+      <h2 id="distribution-heading">{{ s.distribution }}</h2>
+      <p class="panel-sub">{{ s.distribution_help }}</p>
+    </div>
+  </header>
+  <figure class="chart" id="histogram-chart" data-chart="{{ histogram_json }}" data-label-unit="{{ s.jobs_suffix }}" data-label-unit-one="{{ s.job_suffix }}">
+    <figcaption class="chart-caption sr-only"><span class="chart-title">{{ s.distribution }}</span></figcaption>
+    <div class="chart-plot" data-chart-plot></div>
+  </figure>
+  <details class="table-view">
+    <summary>{{ s.show_as_table }}</summary>
+    <div class="table-wrap">
+      <table class="data compact">
+        <caption class="sr-only">{{ s.distribution }}</caption>
+        <thead><tr><th scope="col">{{ s.duration }}</th><th scope="col" class="num">{{ s.executions }}</th></tr></thead>
+        <tbody>
+          {% for row in histogram_rows %}
+          <tr><th scope="row">{{ row.label }}</th>{% for value in row.values %}<td class="num">{{ value }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="panel" aria-labelledby="heatmap-heading">
+  <header class="panel-head">
+    <div>
+      <h2 id="heatmap-heading">{{ s.heatmap }}</h2>
+      <p class="panel-sub">{{ s.heatmap_help }}</p>
+    </div>
+    <span class="heat-key" data-heat-key aria-hidden="true" hidden>
+      <span>{{ s.heatmap_fewer }}</span>
+      <span class="heat-step heat-1"></span><span class="heat-step heat-2"></span><span class="heat-step heat-3"></span><span class="heat-step heat-4"></span><span class="heat-step heat-5"></span>
+      <span>{{ s.heatmap_more }}</span>
+    </span>
+  </header>
+  <figure class="chart" id="heatmap-chart" data-chart="{{ heatmap_json }}" data-label-deploy="{{ s.deploy }}" data-label-unit="{{ s.jobs_suffix }}" data-label-unit-one="{{ s.job_suffix }}">
+    <figcaption class="chart-caption sr-only"><span class="chart-title">{{ s.heatmap }}</span></figcaption>
+    <div class="chart-plot" data-chart-plot></div>
+  </figure>
+  <details class="table-view">
+    <summary>{{ s.show_as_table }}</summary>
+    <div class="table-wrap">
+      <table class="data compact">
+        <caption class="sr-only">{{ s.per_minute_table }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{ s.time_utc }}</th>
+            <th scope="col" class="num">{{ s.executions }}</th>
+            <th scope="col" class="num">{{ s.failed }}</th>
+            <th scope="col" class="num">{{ s.total_time }}</th>
+            <th scope="col" class="num">{{ s.median }}</th>
+            <th scope="col" class="num">{{ s.p95 }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in minute_rows %}
+          <tr><th scope="row">{{ row.label }}</th>{% for value in row.values %}<td class="num">{{ value }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+{% endif %}
+
+{% if !marks.is_empty() %}
+<section class="panel" aria-labelledby="deploys-heading">
+  <header class="panel-head"><h2 id="deploys-heading">{{ s.deploys }}</h2></header>
+  <ul class="deploy-list">
+    {% for mark in marks %}<li><time datetime="{{ mark.iso }}">{{ mark.utc }}</time><span class="deploy-label">{{ mark.label }}</span></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+</div>
+{% endblock %}

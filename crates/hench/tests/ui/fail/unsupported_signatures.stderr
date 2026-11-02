@@ -1,0 +1,65 @@
+error: job functions cannot be generic: a job has one concrete set of arguments
+ --> tests/ui/fail/unsupported_signatures.rs:4:17
+  |
+4 | async fn generic<T>(value: T) {}
+  |                 ^
+
+error: job functions cannot be generic: a job has one concrete set of arguments
+ --> tests/ui/fail/unsupported_signatures.rs:7:25
+  |
+7 | async fn where_clause() where u8: Copy {}
+  |                         ^^^^^
+
+error: job functions cannot be `unsafe`
+  --> tests/ui/fail/unsupported_signatures.rs:10:7
+   |
+10 | async unsafe fn not_safe() {}
+   |       ^^^^^^
+
+error: job arguments are deserialized from JSON, so they must be owned types (for example `String` instead of `&str`)
+  --> tests/ui/fail/unsupported_signatures.rs:13:25
+   |
+13 | async fn borrowed(name: &str) {}
+   |                         ^
+
+error: job arguments are deserialized from JSON, so they must be owned types (for example `String` instead of `&str`)
+  --> tests/ui/fail/unsupported_signatures.rs:16:35
+   |
+16 | async fn nested_borrow(names: Vec<&str>) {}
+   |                                   ^
+
+error: job arguments must have concrete types, not `impl Trait`
+  --> tests/ui/fail/unsupported_signatures.rs:19:24
+   |
+19 | async fn opaque(value: impl Clone) {}
+   |                        ^^^^
+
+error: the job context must be the first parameter
+  --> tests/ui/fail/unsupported_signatures.rs:22:39
+   |
+22 | async fn context_second(id: u64, ctx: &hench::JobContext) {}
+   |                                       ^
+
+error: take the job context by reference: `ctx: &JobContext`
+  --> tests/ui/fail/unsupported_signatures.rs:25:32
+   |
+25 | async fn context_by_value(ctx: hench::JobContext) {}
+   |                                ^^^^^
+
+error: take the job context by shared reference: `ctx: &JobContext`
+  --> tests/ui/fail/unsupported_signatures.rs:28:27
+   |
+28 | async fn context_mut(ctx: &mut hench::JobContext) {}
+   |                           ^
+
+error: job functions cannot be generic: a job has one concrete set of arguments
+  --> tests/ui/fail/unsupported_signatures.rs:31:26
+   |
+31 | async fn several_problems<T>(name: &str) {}
+   |                          ^
+
+error: job arguments are deserialized from JSON, so they must be owned types (for example `String` instead of `&str`)
+  --> tests/ui/fail/unsupported_signatures.rs:31:36
+   |
+31 | async fn several_problems<T>(name: &str) {}
+   |                                    ^

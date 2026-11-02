@@ -1,0 +1,53 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ layout.assets.locks_css }}">
+{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="lock-heading">
+  <header class="panel-head">
+    <h1 id="lock-heading">{{ heading }}</h1>
+    <a class="btn btn-ghost" href="{{ list_href }}">{{ s.go_back }}</a>
+  </header>
+  {% if let Some(note) = note %}
+  <div class="notice{% if note.warning %} notice-warning{% endif %}" role="status">{{ note.text }}</div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="kv">
+      <tbody>
+        <tr><th scope="row">{{ s.job }}</th><td><span class="job-class">{{ lock.class }}</span></td></tr>
+        <tr><th scope="row">{{ s.queue }}</th><td>{% if !lock.queue.is_empty() %}<a href="{{ lock.queue_href }}">{{ lock.queue }}</a>{% endif %}</td></tr>
+        <tr><th scope="row">{{ t.holder }}</th><td><code>{{ lock.jid_shown }}</code></td></tr>
+        <tr><th scope="row">{{ t.policy }}</th><td><span class="chip lock-policy">{{ lock.policy }}</span> <span class="muted">{{ lock.policy_help }}</span></td></tr>
+        <tr><th scope="row">{{ t.unique_for }}</th><td>{{ lock.unique_for }}</td></tr>
+        <tr><th scope="row">{{ t.locked }}</th><td>{% if let Some(at) = lock.locked %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.utc }}</span>{% else %}{{ s.unknown }}{% endif %}</td></tr>
+        <tr><th scope="row">{{ t.expires }}</th><td>{% if let Some(at) = lock.expires %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.utc }}{% if let Some(ttl) = lock.ttl %} ({{ ttl }}){% endif %}</span>{% else %}{{ t.no_expiry }}{% endif %}</td></tr>
+        {% if let Some(at) = lock.holder_runs %}<tr><th scope="row">{{ t.holder_runs }}</th><td><time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.utc }}</span></td></tr>{% endif %}
+        <tr><th scope="row">{{ t.digest }}</th><td><code class="lock-digest">{{ lock.digest }}</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="holder-heading">
+  <header class="panel-head"><h2 id="holder-heading">{{ t.holder_heading }}</h2></header>
+  <p class="lock-holder">{{ holder.text }}{% if let Some(at) = holder.time %} <time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>{% endif %}{% if let Some(link) = holder.link %} <a href="{{ link.0 }}">{{ link.1 }}</a>{% endif %}</p>
+</section>
+
+<section class="panel" aria-labelledby="raw-heading">
+  <details class="raw-json">
+    <summary id="raw-heading">{{ t.raw_hash }}</summary>
+    <pre class="code">{{ raw }}</pre>
+  </details>
+</section>
+
+{% if !layout.read_only %}
+<form method="post" action="{{ action_href }}" class="panel entry-actions button-row">
+  <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  <input type="hidden" name="jid" value="{{ lock.jid }}">
+  <button type="submit" class="btn btn-danger" name="release" value="1" data-confirm="{{ t.confirm_release }}">{{ t.release_lock }}</button>
+  <span class="muted lock-release-help">{{ t.release_help }}</span>
+</form>
+{% endif %}
+{% endblock %}

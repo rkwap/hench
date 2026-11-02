@@ -1,0 +1,28 @@
+/* hench dashboard: the Locks pages (the locks of unique jobs). */
+
+.locks-summary {
+  max-width: 72ch;
+}
+
+.locks-table .lock-holder-link {
+  white-space: nowrap;
+}
+
+.lock-policy {
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+}
+
+.lock-digest {
+  overflow-wrap: anywhere;
+}
+
+.lock-holder {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.lock-release-help {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+}

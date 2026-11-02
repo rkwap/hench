@@ -1,0 +1,195 @@
+{% extends "layout.html" %}
+
+{% block head %}<link rel="stylesheet" href="{{ layout.assets.batches_css }}">{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb" aria-label="{{ t.parent }}">
+  <a href="{{ back_href }}">{{ t.back }}</a>
+  {% if let Some(parent) = parent %} › <a class="mono" href="{{ parent.1 }}">{{ t.parent }} {{ parent.0 }}</a>{% endif %}
+</nav>
+
+<section class="panel" aria-labelledby="batch-heading">
+  <header class="panel-head">
+    <h1 id="batch-heading" class="mono">{{ heading }}</h1>
+    <span class="batch-chips">{% for chip in chips %}<span class="chip {{ chip.class }}">{{ chip.text }}</span> {% endfor %}</span>
+  </header>
+  {% if let Some(description) = description %}<p class="batch-description-full">{{ description }}</p>{% endif %}
+  <div class="batch-progress">
+    <span class="progress progress-wide">
+      <span class="progress-bar" role="img" aria-label="{{ progress.label }}">{% for segment in progress.segments %}<span class="progress-segment progress-{{ segment.kind }} width-{{ segment.width }}"></span>{% endfor %}</span>
+      <span class="progress-counts">{{ progress.counts }}</span>
+    </span>
+    <p class="muted progress-legend">{{ progress.label }}</p>
+  </div>
+  <div class="table-wrap">
+    <table class="kv">
+      <tbody>
+        {% for fact in facts %}
+        <tr><th scope="row">{{ fact.0 }}</th><td>{{ fact.1 }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="callbacks-heading">
+  <header class="panel-head"><h2 id="callbacks-heading">{{ t.callbacks }} <span class="count-badge">{{ callbacks.len() }}</span></h2></header>
+  {% if callbacks.is_empty() %}
+  <p class="empty">{{ t.no_callbacks }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ t.callbacks }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t.event }}</th>
+          <th scope="col">{{ s.job }}</th>
+          <th scope="col">{{ s.queue }}</th>
+          <th scope="col">{{ s.arguments }}</th>
+          <th scope="col">{{ s.jid }}</th>
+          <th scope="col">{{ t.state }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for callback in callbacks %}
+        <tr>
+          <th scope="row">{{ callback.event }}</th>
+          <td><span class="job-class">{{ callback.class }}</span></td>
+          <td>{{ callback.queue }}</td>
+          <td><code class="args">{{ callback.args }}</code></td>
+          <td><code>{{ callback.jid }}</code></td>
+          <td>{{ callback.state }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="failures-heading">
+  <header class="panel-head"><h2 id="failures-heading">{{ t.failures }} <span class="count-badge">{{ failures_total }}</span></h2></header>
+  {% if failures.is_empty() %}
+  <p class="empty">{{ t.no_failures }}</p>
+  {% else %}
+  {% if let Some(pager) = failures_pager %}{% include "partials/pager.html" %}{% endif %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ t.failures }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.jid }}</th>
+          <th scope="col">{{ s.job }}</th>
+          <th scope="col">{{ s.error }}</th>
+          <th scope="col" class="num">{{ s.retry_count }}</th>
+          <th scope="col">{{ t.failed_at }}</th>
+          <th scope="col">{{ t.state }}</th>
+          {% if !layout.read_only %}<th scope="col"><span class="sr-only">{{ s.actions }}</span></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for failure in failures %}
+        <tr>
+          <th scope="row">{% if let Some(href) = failure.href %}<a class="mono" href="{{ href }}"{% if let Some(title) = failure.href_title %} title="{{ title }}"{% endif %}>{{ failure.jid }}</a>{% else %}<code>{{ failure.jid }}</code>{% endif %}</th>
+          <td><span class="job-class">{{ failure.class }}</span></td>
+          <td class="batch-error">{% if !failure.error_class.is_empty() %}<span class="mono">{{ failure.error_class }}</span>{% if !failure.message.is_empty() %}: {% endif %}{% endif %}{{ failure.message }}</td>
+          <td class="num">{{ failure.retry_count }}</td>
+          <td>{% if let Some(at) = failure.failed_at %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>{% endif %}</td>
+          <td>{% if failure.dead %}<span class="chip batch-state-dead">{{ failure.state }}</span>{% else %}{{ failure.state }}{% endif %}</td>
+          {% if !layout.read_only %}
+          <td>
+            {% if failure.dead %}
+            <form method="post" action="{{ action_href }}" class="inline-form">
+              <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+              <input type="hidden" name="jid" value="{{ failure.jid_field }}">
+              <button type="submit" class="btn btn-sm" name="skip" value="1" data-confirm="{{ t.confirm_skip }}">{{ t.skip }}</button>
+            </form>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if let Some(pager) = failures_pager %}{% include "partials/pager.html" %}{% endif %}
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="children-heading">
+  <header class="panel-head"><h2 id="children-heading">{{ t.children }} <span class="count-badge">{{ children_total }}</span></h2></header>
+  {% if children.is_empty() %}
+  <p class="empty">{{ t.no_children }}</p>
+  {% else %}
+  {% if let Some(pager) = children_pager %}{% include "partials/pager.html" %}{% endif %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ t.children }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t.batch }}</th>
+          <th scope="col">{{ t.progress }}</th>
+          <th scope="col" class="num">{{ t.total }}</th>
+          <th scope="col" class="num">{{ t.pending }}</th>
+          <th scope="col">{{ t.state }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in children %}
+        <tr>
+          <th scope="row">
+            <a class="batch-bid mono" href="{{ row.href }}">{{ row.bid }}</a>
+            {% if !row.description.is_empty() %}<span class="batch-description"{% if let Some(full) = row.description_full %} title="{{ full }}"{% endif %}>{{ row.description }}</span>{% endif %}
+          </th>
+          <td>
+            <span class="progress">
+              <span class="progress-bar" role="img" aria-label="{{ row.progress.label }}">{% for segment in row.progress.segments %}<span class="progress-segment progress-{{ segment.kind }} width-{{ segment.width }}"></span>{% endfor %}</span>
+              <span class="progress-counts">{{ row.progress.counts }}</span>
+            </span>
+          </td>
+          <td class="num">{{ row.total }}</td>
+          <td class="num">{{ row.pending }}</td>
+          <td>{% for chip in row.chips %}<span class="chip {{ chip.class }}">{{ chip.text }}</span> {% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if let Some(pager) = children_pager %}{% include "partials/pager.html" %}{% endif %}
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="pending-heading">
+  <header class="panel-head"><h2 id="pending-heading">{{ t.pending_members }}</h2></header>
+  <p class="muted panel-note">{{ t.pending_help }}</p>
+  {% if pending.is_empty() %}
+  <p class="empty">{{ t.no_pending }}</p>
+  {% else %}
+  <ul class="batch-pending">
+    {% for member in pending %}
+    <li>
+      <code>{{ member.jid }}</code>
+      <span class="muted">{{ t.find_in }}</span>
+      {% for find in member.finds %}<a class="pager-link" href="{{ find.1 }}">{{ find.0 }}</a> {% endfor %}
+      {% if !layout.read_only %}
+      <form method="post" action="{{ action_href }}" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+        <input type="hidden" name="jid" value="{{ member.jid_field }}">
+        <button type="submit" class="btn btn-sm" name="skip" value="1" data-confirm="{{ t.confirm_skip }}">{{ t.skip }}</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{% if !layout.read_only %}
+<form method="post" action="{{ action_href }}" class="panel entry-actions button-row">
+  <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  {% if can_cancel %}<button type="submit" class="btn btn-danger" name="cancel" value="1" data-confirm="{{ confirm_cancel }}">{{ t.cancel }}</button>{% endif %}
+  <button type="submit" class="btn btn-danger" name="delete" value="1" data-confirm="{{ t.confirm_delete }}">{{ t.delete }}</button>
+  {% if can_dispatch %}<button type="submit" class="btn" name="dispatch" value="1" title="{{ t.dispatch_help }}">{{ t.dispatch }}</button>{% endif %}
+</form>
+{% endif %}
+{% endblock %}

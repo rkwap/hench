@@ -1,0 +1,71 @@
+error: expected a number of seconds from 1 to 999999999
+ --> tests/ui/fail/unique_options.rs:1:27
+  |
+1 | #[hench::job(unique_for = 0)]
+  |                           ^
+
+error: expected a number of seconds from 1 to 999999999
+ --> tests/ui/fail/unique_options.rs:4:27
+  |
+4 | #[hench::job(unique_for = 1000000000)]
+  |                           ^^^^^^^^^^
+
+error: expected a number of seconds from 1 to 999999999
+ --> tests/ui/fail/unique_options.rs:7:27
+  |
+7 | #[hench::job(unique_for = "10m")]
+  |                           ^^^^^
+
+error: expected one of: "success", "start", "expired"
+  --> tests/ui/fail/unique_options.rs:10:29
+   |
+10 | #[hench::job(unique_until = "done")]
+   |                             ^^^^^^
+
+error: expected one of: "drop", "error", "replace"
+  --> tests/ui/fail/unique_options.rs:13:28
+   |
+13 | #[hench::job(on_conflict = "skip")]
+   |                            ^^^^^^
+
+error: expected `true` or `false`
+  --> tests/ui/fail/unique_options.rs:16:37
+   |
+16 | #[hench::job(unique_across_queues = 1)]
+   |                                     ^
+
+error: expected at least one parameter, such as `[account]`
+  --> tests/ui/fail/unique_options.rs:19:14
+   |
+19 | #[hench::job(unique_by = [])]
+   |              ^^^^^^^^^^^^^^
+
+error: expected square brackets
+  --> tests/ui/fail/unique_options.rs:22:26
+   |
+22 | #[hench::job(unique_by = user_id)]
+   |                          ^^^^^^^
+
+error: `user` is not an argument of the job: its arguments are `user_id`
+  --> tests/ui/fail/unique_options.rs:25:44
+   |
+25 | #[hench::job(unique_for = 60, unique_by = [user])]
+   |                                            ^^^^
+
+error: `user_id` is listed twice in `unique_by`
+  --> tests/ui/fail/unique_options.rs:30:53
+   |
+30 | #[hench::job(unique_for = 60, unique_by = [user_id, user_id])]
+   |                                                     ^^^^^^^
+
+error: `ctx` is the job context: `unique_by` names the job's arguments
+  --> tests/ui/fail/unique_options.rs:35:44
+   |
+35 | #[hench::job(unique_for = 60, unique_by = [ctx])]
+   |                                            ^^^
+
+error: `x` is not an argument of the job: the job takes no arguments
+  --> tests/ui/fail/unique_options.rs:40:44
+   |
+40 | #[hench::job(unique_for = 60, unique_by = [x])]
+   |                                            ^

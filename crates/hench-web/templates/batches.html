@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+
+{% block head %}<link rel="stylesheet" href="{{ layout.assets.batches_css }}">{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="batches-heading">
+  <header class="panel-head">
+    <h1 id="batches-heading">{{ t.heading }} <span class="count-badge">{{ total }}</span></h1>
+    <form role="search" method="get" action="{{ filter_action }}" class="filter-form">
+      {% if state != "active" %}<input type="hidden" name="state" value="{{ state }}">{% endif %}
+      <label for="filter-input">{{ s.filter }}</label>
+      <input id="filter-input" type="search" name="substr" value="{{ filter_value }}" placeholder="{{ s.filter_placeholder }}" maxlength="256" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn btn-sm">{{ s.apply_filter }}</button>
+      {% if !filter_value.is_empty() %}<a class="btn btn-sm btn-ghost" href="{{ filter_action }}">{{ s.clear_filter }}</a>{% endif %}
+    </form>
+  </header>
+  <div class="batches-summary">
+    <p>{{ summary }}</p>
+    <nav class="batches-states" aria-label="{{ t.states }}">
+      <span class="muted">{{ t.states }}:</span>
+      {% for link in states %}<a class="pager-link" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>{{ link.label }}</a>{% endfor %}
+    </nav>
+    {% if let Some(searched) = searched %}<p class="muted batches-searched">{{ searched }}</p>{% endif %}
+  </div>
+
+  {% if rows.is_empty() %}
+  <p class="empty">{{ empty_text }}</p>
+  {% else %}
+  {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+  <div class="table-wrap">
+    <table class="data batches-table">
+      <caption class="sr-only">{{ t.heading }}: {{ state_name }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t.batch }}</th>
+          <th scope="col">{{ t.created }}</th>
+          <th scope="col">{{ t.progress }}</th>
+          <th scope="col" class="num">{{ t.total }}</th>
+          <th scope="col" class="num">{{ t.pending }}</th>
+          <th scope="col" class="num">{{ t.failures }}</th>
+          <th scope="col" class="num">{{ t.dead }}</th>
+          <th scope="col" class="num">{{ t.children }}</th>
+          <th scope="col">{{ t.state }}</th>
+          <th scope="col">{{ t.expires }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <th scope="row">
+            <a class="batch-bid mono" href="{{ row.href }}">{{ row.bid }}</a>
+            {% if !row.description.is_empty() %}<span class="batch-description"{% if let Some(full) = row.description_full %} title="{{ full }}"{% endif %}>{{ row.description }}</span>{% endif %}
+          </th>
+          <td><time{% if !row.created.iso.is_empty() %} datetime="{{ row.created.iso }}"{% endif %} title="{{ row.created.utc }}" data-relative>{{ row.created.text }}</time></td>
+          <td>
+            <span class="progress">
+              <span class="progress-bar" role="img" aria-label="{{ row.progress.label }}">{% for segment in row.progress.segments %}<span class="progress-segment progress-{{ segment.kind }} width-{{ segment.width }}"></span>{% endfor %}</span>
+              <span class="progress-counts">{{ row.progress.counts }}</span>
+            </span>
+          </td>
+          <td class="num">{{ row.total }}</td>
+          <td class="num">{{ row.pending }}</td>
+          <td class="num">{{ row.failures }}</td>
+          <td class="num">{{ row.dead }}</td>
+          <td class="num">{{ row.children }}</td>
+          <td>{% for chip in row.chips %}<span class="chip {{ chip.class }}">{{ chip.text }}</span> {% endfor %}</td>
+          <td>{% if let Some(at) = row.expires %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

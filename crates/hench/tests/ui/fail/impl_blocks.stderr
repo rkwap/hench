@@ -1,0 +1,23 @@
+error: the name and options of a job implemented by hand are set in its trait implementation (`NAME`, `fn options()`); on an impl block #[hench::job] only accepts `crate`
+ --> tests/ui/fail/impl_blocks.rs:7:1
+  |
+7 | impl Job for WithOptions {
+  | ^^^^
+
+error: #[hench::job] applies to `impl Job for ...` or `impl IterableJob for ...` blocks, not to inherent impls
+  --> tests/ui/fail/impl_blocks.rs:19:1
+   |
+19 | impl Inherent {
+   | ^^^^
+
+error: #[hench::job] applies to `impl Job for ...` or `impl IterableJob for ...` blocks
+  --> tests/ui/fail/impl_blocks.rs:27:6
+   |
+27 | impl Clone for OtherTrait {
+   |      ^^^^^
+
+error: generic jobs cannot be registered automatically: register each instance with `HenchBuilder::register`
+  --> tests/ui/fail/impl_blocks.rs:37:5
+   |
+37 | impl<T: Send + Sync + Default + 'static> Job for Generic<T> {
+   |     ^

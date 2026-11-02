@@ -1,0 +1,6 @@
+{% extends "layout.html" %}
+
+{% block content %}
+{#- The host application's own HTML (see `Page::render`): the only content not escaped here. -#}
+{{ content|safe }}
+{% endblock %}

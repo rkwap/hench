@@ -1,0 +1,101 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<script src="{{ layout.assets.dashboard_js }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="live-heading">
+  <header class="panel-head">
+    <div>
+      <h1 id="live-heading">{{ s.dashboard }}</h1>
+      <p class="panel-sub">{{ s.live_chart_help }}</p>
+    </div>
+    <div class="panel-tools interval" id="interval-control" hidden>
+      <label for="poll-interval">{{ s.poll_interval }}</label>
+      <input id="poll-interval" type="range" min="1" max="60" step="1" value="{{ poll_secs }}">
+      <output id="poll-interval-value" for="poll-interval">{{ poll_secs }} {{ s.seconds_unit }}</output>
+    </div>
+  </header>
+  <figure class="chart" id="live-chart"
+    data-stats-url="{{ stats_url }}"
+    data-label-processed="{{ s.processed }}"
+    data-label-failed="{{ s.failed }}"
+    data-status-template="{{ s.live_status_template }}"
+    data-error-text="{{ s.chart_unavailable }}">
+    <figcaption class="chart-caption">
+      <span class="chart-title">{{ s.live_chart }}</span>
+      <span class="legend" aria-hidden="true">
+        <span class="legend-item"><span class="legend-key series-processed"></span>{{ s.processed }}</span>
+        <span class="legend-item"><span class="legend-key series-failed"></span>{{ s.failed }}</span>
+      </span>
+    </figcaption>
+    <div class="chart-plot" data-chart-plot></div>
+    <p class="chart-note" data-chart-note>{{ s.waiting_for_data }}</p>
+  </figure>
+  {# The latest numbers, for screen readers to read; not a live region: polls are routine. #}
+  <p class="sr-only" id="live-status"></p>
+  {# Announced: a refresh that starts failing (once, until it recovers). #}
+  <p class="sr-only" id="live-alert" role="status"></p>
+</section>
+
+<section class="panel" aria-labelledby="history-heading">
+  <header class="panel-head">
+    <div>
+      <h2 id="history-heading">{{ s.history }}</h2>
+      <p class="panel-sub">{{ s.history_chart_help }}</p>
+    </div>
+    <nav class="segmented" aria-label="{{ s.history_range }}">
+      {% for range in ranges %}
+      <a href="{{ range.href }}"{% if range.active %} aria-current="true"{% endif %}>{{ range.label }}</a>
+      {% endfor %}
+    </nav>
+  </header>
+  <figure class="chart" id="history-chart"
+    data-series="{{ history_json }}"
+    data-label-processed="{{ s.processed }}"
+    data-label-failed="{{ s.failed }}">
+    <figcaption class="chart-caption">
+      <span class="chart-title">{{ history_title }}</span>
+      <span class="legend" aria-hidden="true">
+        <span class="legend-item"><span class="legend-key series-processed"></span>{{ s.processed }}</span>
+        <span class="legend-item"><span class="legend-key series-failed"></span>{{ s.failed }}</span>
+      </span>
+    </figcaption>
+    <div class="chart-plot" data-chart-plot></div>
+  </figure>
+  <details class="table-view">
+    <summary>{{ s.show_as_table }}</summary>
+    <div class="table-wrap">
+      <table class="data compact">
+        <caption class="sr-only">{{ history_title }}</caption>
+        <thead>
+          <tr><th scope="col">{{ s.date }}</th><th scope="col" class="num">{{ s.processed }}</th><th scope="col" class="num">{{ s.failed }}</th></tr>
+        </thead>
+        <tbody>
+          {% for day in history %}
+          <tr><th scope="row">{{ day.date }}</th><td class="num">{{ day.processed }}</td><td class="num">{{ day.failed }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="panel" aria-labelledby="redis-heading">
+  <header class="panel-head">
+    <h2 id="redis-heading">{{ redis.store }}</h2>
+  </header>
+  {% if redis.available %}
+  <dl class="facts">
+    <div class="fact"><dt>{{ s.version }}</dt><dd id="redis-version">{{ redis.version }}</dd></div>
+    <div class="fact"><dt>{{ s.uptime_days }}</dt><dd id="redis-uptime">{{ redis.uptime_days }}</dd></div>
+    <div class="fact"><dt>{{ s.connections }}</dt><dd id="redis-connections">{{ redis.connections }}</dd></div>
+    <div class="fact"><dt>{{ s.memory_usage }}</dt><dd id="redis-memory">{{ redis.memory }}</dd></div>
+    <div class="fact"><dt>{{ s.peak_memory }}</dt><dd id="redis-peak-memory">{{ redis.peak_memory }}</dd></div>
+  </dl>
+  {% else %}
+  <p class="empty">{{ s.redis_unavailable }}</p>
+  {% endif %}
+</section>
+{% endblock %}

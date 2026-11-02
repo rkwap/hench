@@ -1,0 +1,56 @@
+error[E0277]: `Result<(), std::string::String>` is not a valid return type for a `#[hench::job]` function
+ --> tests/ui/typeck/error_types.rs:5:35
+  |
+5 | async fn with_a_string_error() -> Result<(), String> {
+  |                                   ^^^^^^^^^^^^^^^^^^ return `()` or `Result<(), E>` where `E` converts into `hench::JobError`
+  |
+  = help: the trait `hench::__private::JobReturn` is not implemented for `Result<(), std::string::String>`
+  = note: `E` can be `hench::JobError`, `anyhow::Error` (`anyhow::Result<()>`) or any type implementing `std::error::Error + Send + Sync + 'static`; `String` and `Box<dyn Error>` are not: convert them with `.map_err(JobError::msg)` or `.map_err(JobError::from_boxed)`
+help: the trait `hench::__private::JobReturn` is implemented for `()`
+ --> src/lib.rs
+  |
+  |     impl JobReturn for () {
+  |     ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `hench::__private::into_job_result`
+ --> src/lib.rs
+  |
+  |     pub fn into_job_result<R: JobReturn>(result: R) -> Result<(), JobError> {
+  |                               ^^^^^^^^^ required by this bound in `into_job_result`
+
+error[E0277]: `Result<(), Box<dyn std::error::Error + Send + Sync>>` is not a valid return type for a `#[hench::job]` function
+  --> tests/ui/typeck/error_types.rs:10:34
+   |
+10 | async fn with_a_boxed_error() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ return `()` or `Result<(), E>` where `E` converts into `hench::JobError`
+   |
+   = help: the trait `hench::__private::JobReturn` is not implemented for `Result<(), Box<dyn std::error::Error + Send + Sync>>`
+   = note: `E` can be `hench::JobError`, `anyhow::Error` (`anyhow::Result<()>`) or any type implementing `std::error::Error + Send + Sync + 'static`; `String` and `Box<dyn Error>` are not: convert them with `.map_err(JobError::msg)` or `.map_err(JobError::from_boxed)`
+help: the trait `hench::__private::JobReturn` is implemented for `()`
+  --> src/lib.rs
+   |
+   |     impl JobReturn for () {
+   |     ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `hench::__private::into_job_result`
+  --> src/lib.rs
+   |
+   |     pub fn into_job_result<R: JobReturn>(result: R) -> Result<(), JobError> {
+   |                               ^^^^^^^^^ required by this bound in `into_job_result`
+
+error[E0277]: `Result<(), Box<dyn std::error::Error>>` is not a valid return type for a `#[hench::job]` function
+  --> tests/ui/typeck/error_types.rs:15:51
+   |
+15 | async fn with_a_boxed_error_that_is_not_send() -> Result<(), Box<dyn std::error::Error>> {
+   |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ return `()` or `Result<(), E>` where `E` converts into `hench::JobError`
+   |
+   = help: the trait `hench::__private::JobReturn` is not implemented for `Result<(), Box<dyn std::error::Error>>`
+   = note: `E` can be `hench::JobError`, `anyhow::Error` (`anyhow::Result<()>`) or any type implementing `std::error::Error + Send + Sync + 'static`; `String` and `Box<dyn Error>` are not: convert them with `.map_err(JobError::msg)` or `.map_err(JobError::from_boxed)`
+help: the trait `hench::__private::JobReturn` is implemented for `()`
+  --> src/lib.rs
+   |
+   |     impl JobReturn for () {
+   |     ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `hench::__private::into_job_result`
+  --> src/lib.rs
+   |
+   |     pub fn into_job_result<R: JobReturn>(result: R) -> Result<(), JobError> {
+   |                               ^^^^^^^^^ required by this bound in `into_job_result`

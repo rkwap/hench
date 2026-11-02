@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="panel" aria-labelledby="set-heading">
+  <header class="panel-head">
+    <h1 id="set-heading">{{ heading }} <span class="count-badge">{{ total }}</span></h1>
+    {% include "partials/filter.html" %}
+  </header>
+  {% if let Some(summary) = filter_summary %}<p class="filter-summary">{{ summary }}</p>{% endif %}
+
+  {% if rows.is_empty() %}
+  <p class="empty">{{ empty_text }}</p>
+  {% else %}
+  {% if !layout.read_only %}
+  <form method="post" action="{{ list_url }}" class="bulk-form" data-bulk-form>
+    <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  {% endif %}
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+    <div class="table-wrap">
+      <table class="data">
+        <caption class="sr-only">{{ heading }}</caption>
+        <thead>
+          <tr>
+            {% if !layout.read_only %}
+            <th scope="col" class="check-cell">
+              <input type="checkbox" class="check-all" data-check-all aria-label="{{ s.select_all }}" hidden>
+            </th>
+            {% endif %}
+            <th scope="col">{{ time_label }}</th>
+            {% if is_retries %}<th scope="col" class="num">{{ s.retry_count }}</th>{% endif %}
+            <th scope="col">{{ s.queue }}</th>
+            <th scope="col">{{ s.job }}</th>
+            <th scope="col">{{ s.arguments }}</th>
+            {% if !is_scheduled %}<th scope="col">{{ s.error }}</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            {% if !layout.read_only %}
+            <td class="check-cell">
+              <input type="checkbox" name="key" value="{{ row.key }}" data-check-item aria-label="{{ s.select_job }} {{ row.jid }}">
+            </td>
+            {% endif %}
+            <td>
+              <a href="{{ row.href }}">{% if let Some(t) = row.at %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>{% else %}{{ s.unknown }}{% endif %}</a>
+            </td>
+            {% if is_retries %}<td class="num">{% if let Some(count) = row.retry_count %}{{ count }}{% endif %}</td>{% endif %}
+            <td>{% if !row.queue.is_empty() %}<a href="{{ row.queue_href }}">{{ row.queue }}</a>{% endif %}</td>
+            <td>{% include "partials/job_class.html" %}</td>
+            <td class="args-cell">{% include "partials/job_args.html" %}</td>
+            {% if !is_scheduled %}
+            <td class="error-cell">{% if let Some(error) = row.error %}<a href="{{ row.href }}">{{ error }}</a>{% endif %}{% include "partials/iteration.html" %}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+    {% if !layout.read_only %}
+    <div class="bulk-actions">
+      <div class="button-row" role="group" aria-label="{{ s.selected }}">
+        <span class="button-row-label">{{ s.selected }}</span>
+        {% if is_scheduled %}
+        <button type="submit" class="btn btn-primary" name="add_to_queue" value="1" data-needs-selection>{{ s.add_to_queue }}</button>
+        {% else %}
+        <button type="submit" class="btn btn-primary" name="retry" value="1" data-needs-selection>{{ s.retry_now }}</button>
+        {% endif %}
+        <button type="submit" class="btn btn-danger" name="delete" value="1" data-needs-selection data-confirm="{{ s.confirm_delete_selected }}">{{ s.delete }}</button>
+        {% if is_retries %}
+        <button type="submit" class="btn btn-danger" name="kill" value="1" data-needs-selection data-confirm="{{ s.confirm_kill_selected }}">{{ s.kill }}</button>
+        {% endif %}
+      </div>
+      {% if let Some(all) = all_actions %}
+      <div class="button-row" role="group" aria-label="{{ s.everything }}">
+        <span class="button-row-label">{{ s.everything }}</span>
+        {% if is_scheduled %}
+        <button type="submit" class="btn" formaction="{{ list_url }}/all/add_to_queue" data-confirm="{{ all.requeue }}">{{ s.add_all_to_queue }}</button>
+        {% else %}
+        <button type="submit" class="btn" formaction="{{ list_url }}/all/retry" data-confirm="{{ all.requeue }}">{{ s.retry_all }}</button>
+        {% endif %}
+        <button type="submit" class="btn btn-danger" formaction="{{ list_url }}/all/delete" data-confirm="{{ all.delete }}">{{ s.delete_all }}</button>
+        {% if is_retries %}
+        <button type="submit" class="btn btn-danger" formaction="{{ list_url }}/all/kill" data-confirm="{{ all.kill }}">{{ s.kill_all }}</button>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </form>
+    {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

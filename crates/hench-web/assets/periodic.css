@@ -1,0 +1,77 @@
+/* hench dashboard: the Periodic pages (the periodic schedules). */
+
+.periodic-summary {
+  max-width: 72ch;
+}
+
+.periodic-banner {
+  margin-bottom: 12px;
+}
+
+.periodic-name {
+  font-weight: 650;
+  overflow-wrap: break-word;
+}
+
+.periodic-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.periodic-expression {
+  white-space: nowrap;
+}
+
+.periodic-describe,
+.periodic-local,
+.periodic-detail {
+  font-size: 0.8rem;
+}
+
+.periodic-args {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.periodic-table .actions {
+  min-width: 13rem;
+}
+
+.periodic-table .actions .btn + .btn {
+  margin-left: 4px;
+}
+
+.periodic-upcoming {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.periodic-upcoming li + li {
+  margin-top: 4px;
+}
+
+.periodic-dst {
+  color: var(--warn-ink);
+  font-size: 0.8rem;
+}
+
+.periodic-digest {
+  overflow-wrap: anywhere;
+}
+
+.periodic-template {
+  margin-top: 8px;
+  max-height: 20rem;
+}
+
+.periodic-actions-help {
+  flex-basis: 100%;
+  font-size: 0.85rem;
+}
+
+.periodic-history .mono {
+  white-space: nowrap;
+}

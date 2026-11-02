@@ -1,0 +1,126 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="panel" aria-labelledby="status-heading">
+  <header class="panel-head">
+    <h1 id="status-heading">{{ s.status }}</h1>
+  </header>
+  <dl class="facts">
+    <div class="fact"><dt>{{ s.processes }}</dt><dd>{{ status.processes }}</dd></div>
+    <div class="fact"><dt>{{ s.threads }}</dt><dd>{{ status.threads }}</dd></div>
+    <div class="fact"><dt>{{ s.busy }}</dt><dd>{{ status.busy }}</dd></div>
+    <div class="fact"><dt>{{ s.utilization }}</dt><dd>{{ status.utilization }}%</dd></div>
+    <div class="fact"><dt>{{ s.rss }}</dt><dd>{{ status.rss }}</dd></div>
+  </dl>
+</section>
+
+{% if show_processes %}
+<section class="panel" aria-labelledby="processes-heading">
+  <header class="panel-head">
+    <h2 id="processes-heading">{{ s.processes }}</h2>
+    {% if !layout.read_only && any_standalone %}
+    <form method="post" action="{{ busy_url }}" class="panel-tools">
+      <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+      <button type="submit" class="btn btn-warn" name="quiet" value="1" data-confirm="{{ s.confirm_quiet_all }}" title="{{ s.all_skips_embedded }}">{{ s.quiet_all }}</button>
+      <button type="submit" class="btn btn-danger" name="stop" value="1" data-confirm="{{ s.confirm_stop_all }}" title="{{ s.all_skips_embedded }}">{{ s.stop_all }}</button>
+    </form>
+    {% endif %}
+  </header>
+  {% if processes.is_empty() %}
+  <p class="empty">{{ s.no_processes }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ s.processes }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.process }}</th>
+          <th scope="col">{{ s.started }}</th>
+          <th scope="col">{{ s.last_beat }}</th>
+          <th scope="col" class="num">{{ s.rss }}</th>
+          <th scope="col" class="num">{{ s.threads }}</th>
+          <th scope="col" class="num">{{ s.busy }}</th>
+          {% if !layout.read_only %}<th scope="col"><span class="sr-only">{{ s.actions }}</span></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for process in processes %}
+        <tr{% if process.quiet %} class="row-quiet"{% endif %}>
+          <th scope="row" class="process-cell">
+            <div class="process-name">{{ process.name }}
+              {% if let Some(tag) = process.tag %}<span class="chip chip-accent">{{ tag }}</span>{% endif %}
+              {% for label in process.labels %}<span class="chip chip-tag">{{ label }}</span>{% endfor %}
+              {% if process.embedded %}<span class="chip chip-muted">{{ s.embedded }}</span>{% endif %}
+              {% if process.quiet %}<span class="chip chip-warn">{{ s.quiet_label }}</span>{% endif %}
+              {% if let Some(lacks) = process.lacks %}<span class="chip chip-warn" title="{{ s.lacks_help }}">{{ s.lacks }}: {{ lacks }}</span>{% endif %}
+            </div>
+            <div class="process-meta"><span class="meta-label">{{ s.queues }}:</span> {{ process.queues }}</div>
+            {% if let Some(version) = process.version %}<div class="process-meta"><span class="meta-label">{{ s.version }}:</span> {{ version }}</div>{% endif %}
+            <div class="process-meta mono">{{ process.identity }}</div>
+          </th>
+          <td>{% if let Some(t) = process.started %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>{% else %}{{ s.unknown }}{% endif %}</td>
+          <td>{% if let Some(t) = process.beat %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>{% else %}{{ s.unknown }}{% endif %}</td>
+          <td class="num">{{ process.rss }}</td>
+          <td class="num">{{ process.concurrency }}</td>
+          <td class="num">{{ process.busy }}</td>
+          {% if !layout.read_only %}
+          <td class="actions">
+            <form method="post" action="{{ busy_url }}" class="button-row">
+              <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+              <input type="hidden" name="identity" value="{{ process.identity_field }}">
+              {% if !process.quiet %}<button type="submit" class="btn btn-sm btn-warn" name="quiet" value="1" data-confirm="{{ s.confirm_quiet }}">{{ s.quiet }}</button>{% endif %}
+              <button type="submit" class="btn btn-sm btn-danger" name="stop" value="1" data-confirm="{{ s.confirm_stop }}">{{ s.stop }}</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if show_jobs %}
+<section class="panel" aria-labelledby="jobs-heading">
+  <header class="panel-head">
+    <h2 id="jobs-heading">{{ s.jobs }}</h2>
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+  </header>
+  {% if works.is_empty() %}
+  <p class="empty">{{ s.no_running_jobs }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ s.jobs }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.process }}</th>
+          <th scope="col">{{ s.slot }}</th>
+          <th scope="col">{{ s.jid }}</th>
+          <th scope="col">{{ s.queue }}</th>
+          <th scope="col">{{ s.job }}</th>
+          <th scope="col">{{ s.arguments }}</th>
+          <th scope="col">{{ s.running_since }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in works %}
+        <tr>
+          <td class="mono">{{ row.process }}</td>
+          <td class="mono">{{ row.slot }}</td>
+          <td class="mono">{{ row.jid }}</td>
+          <td><a href="{{ row.queue_href }}">{{ row.queue }}</a></td>
+          <td>{% include "partials/job_class.html" %}</td>
+          <td class="args-cell">{% include "partials/job_args.html" %}</td>
+          <td>{% if let Some(t) = row.at %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>{% endif %}{% include "partials/iteration.html" %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<script src="{{ layout.assets.metrics_js }}" defer></script>
+{% endblock %}
+
+{% block content %}
+<div id="metrics-root" class="metrics-root"{% if auto_refresh %} data-auto-refresh="60"{% endif %}>
+<section class="panel" aria-labelledby="metrics-heading">
+  <header class="panel-head">
+    <div>
+      <h1 id="metrics-heading">{{ s.metrics }}</h1>
+      <p class="panel-sub">{{ s.metrics_help }}</p>
+    </div>
+  </header>
+  <div class="toolbar metrics-filters">
+    <nav class="segmented" aria-label="{{ s.metrics_period }}">
+      {% for range in periods %}<a href="{{ range.href }}"{% if range.active %} aria-current="true"{% endif %}>{{ range.label }}</a>{% endfor %}
+    </nav>
+    <form role="search" method="get" action="{{ filter_action }}" class="filter-form">
+      {% if period != "1h" %}<input type="hidden" name="period" value="{{ period }}">{% endif %}
+      {% if !default_sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <label for="filter-input">{{ s.filter }}</label>
+      <input id="filter-input" type="search" name="substr" value="{{ filter_value }}" placeholder="{{ s.metrics_filter_placeholder }}" maxlength="256" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn btn-sm">{{ s.apply_filter }}</button>
+      {% if !filter_value.is_empty() %}<a class="btn btn-sm btn-ghost" href="{{ clear_href }}">{{ s.clear_filter }}</a>{% endif %}
+    </form>
+  </div>
+  <p class="filter-summary" id="metrics-summary">{{ summary }}</p>
+
+  {% if rows.is_empty() %}
+  <p class="empty">{% if filter_value.is_empty() %}{{ s.no_metrics }}{% else %}{{ s.no_metrics_match }}{% endif %}</p>
+  {% else %}
+  <figure class="chart metrics-chart" id="metrics-chart" data-chart="{{ chart_json }}" data-label-deploy="{{ s.deploy }}">
+    <figcaption class="chart-caption">
+      <span class="chart-title">{{ chart_title }}</span>
+      <span class="legend" data-legend aria-hidden="true"></span>
+    </figcaption>
+    <div class="chart-plot" data-chart-plot></div>
+  </figure>
+  <p class="chart-help" data-series-help hidden>{{ s.chart_series_help }}</p>
+  <details class="table-view">
+    <summary>{{ s.show_as_table }}</summary>
+    <div class="table-wrap">
+      <table class="data compact" data-chart-table>
+        <caption class="sr-only">{{ chart_title }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{ s.time_utc }}</th>
+            {% for name in chart_head %}<th scope="col" class="num">{{ name }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in chart_rows %}
+          <tr><th scope="row">{{ row.label }}</th>{% for value in row.values %}<td class="num">{{ value }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <div class="table-wrap">
+    <table class="data metrics-table">
+      <caption class="sr-only">{{ summary }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.job_class }}</th>
+          {% for column in columns %}
+          <th scope="col" class="num"{% if column.active %} aria-sort="descending"{% endif %}><a class="sort-link" href="{{ column.href }}"><span class="sr-only">{{ s.sort_by }} </span>{{ column.label }}</a></th>
+          {% if loop.index0 == 1 %}{% for name in feature_columns %}<th scope="col" class="num">{{ name }}</th>{% endfor %}{% endif %}
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <th scope="row">
+            <span class="series-toggle">
+              <input type="checkbox" data-series-toggle value="{{ loop.index0 }}" aria-label="{{ row.toggle_label }}"{% if row.charted %} checked{% endif %} hidden>
+              <span class="swatch" data-series-swatch aria-hidden="true"></span>
+              <a class="job-class" href="{{ row.href }}">{{ row.class }}</a>
+            </span>
+          </th>
+          <td class="num">{{ row.executions }}</td>
+          <td class="num">{{ row.failed }}</td>
+          {% for value in row.features %}<td class="num">{{ value }}</td>{% endfor %}
+          <td class="num">{{ row.total }}</td>
+          <td class="num">{{ row.average }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if let Some(note) = cut_note %}<p class="panel-sub">{{ note }}</p>{% endif %}
+  {% endif %}
+  <p class="panel-sub metrics-window">{{ window }}{% if auto_refresh %} {{ s.auto_refresh }}{% endif %}</p>
+</section>
+
+{% if !marks.is_empty() %}
+<section class="panel" aria-labelledby="deploys-heading">
+  <header class="panel-head"><h2 id="deploys-heading">{{ s.deploys }}</h2></header>
+  <ul class="deploy-list">
+    {% for mark in marks %}<li><time datetime="{{ mark.iso }}">{{ mark.utc }}</time><span class="deploy-label">{{ mark.label }}</span></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+</div>
+{% endblock %}

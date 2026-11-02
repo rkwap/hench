@@ -1,0 +1,6 @@
+<span class="job-class">{{ row.class }}</span>
+{% for tag in row.tags %}
+{% if let Some(href) = tag.href %}<a class="chip chip-tag" href="{{ href }}">{{ tag.name }}</a>{% else %}<span class="chip chip-tag">{{ tag.name }}</span>{% endif %}
+{% endfor %}
+{% for chip in row.chips %}<span class="chip chip-muted">{{ chip }}</span>
+{% endfor %}

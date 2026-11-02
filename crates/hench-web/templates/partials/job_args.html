@@ -1,0 +1,8 @@
+{% if let Some(full) = row.args_full %}
+<details class="args-toggle">
+  <summary><code class="args">{{ row.args }}</code><span class="args-more">{{ s.show_all }}</span></summary>
+  <code class="args args-full">{{ full }}</code>
+</details>
+{% else %}
+<code class="args">{{ row.args }}</code>
+{% endif %}

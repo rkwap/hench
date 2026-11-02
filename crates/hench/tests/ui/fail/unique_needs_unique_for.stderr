@@ -1,0 +1,29 @@
+error: `on_conflict` needs `unique_for = <seconds>`: a job is unique only for a time (a push that should not be unique says `.not_unique()`)
+ --> tests/ui/fail/unique_needs_unique_for.rs:4:28
+  |
+4 | #[hench::job(on_conflict = "error")]
+  |                            ^^^^^^^
+
+error: `unique_until` needs `unique_for = <seconds>`: a job is unique only for a time (a push that should not be unique says `.not_unique()`)
+ --> tests/ui/fail/unique_needs_unique_for.rs:7:29
+  |
+7 | #[hench::job(unique_until = "start")]
+  |                             ^^^^^^^
+
+error: `unique_across_queues` needs `unique_for = <seconds>`: a job is unique only for a time (a push that should not be unique says `.not_unique()`)
+  --> tests/ui/fail/unique_needs_unique_for.rs:10:37
+   |
+10 | #[hench::job(unique_across_queues = true)]
+   |                                     ^^^^
+
+error: `unique_by` needs `unique_for = <seconds>`: a job is unique only for a time (a push that should not be unique says `.not_unique()`)
+  --> tests/ui/fail/unique_needs_unique_for.rs:13:27
+   |
+13 | #[hench::job(unique_by = [user_id])]
+   |                           ^^^^^^^
+
+error: `on_conflict` needs `unique_for = <seconds>`: a job is unique only for a time (a push that should not be unique says `.not_unique()`)
+  --> tests/ui/fail/unique_needs_unique_for.rs:18:51
+   |
+18 | #[hench::job(unique_by = [user_id], on_conflict = "drop")]
+   |                                                   ^^^^^^

@@ -1,0 +1,5 @@
+error: conditional job parameters are not supported: the arguments are stored with the job and must be the same in every build
+ --> tests/ui/fail/conditional_parameters.rs:4:22
+  |
+4 | async fn conditional(#[cfg(unix)] extra: u8, id: u64) {}
+  |                      ^

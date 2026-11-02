@@ -1,0 +1,17 @@
+error: use of deprecated function `old::old_api`: use `new_api`
+  --> tests/ui/typeck/deprecated_in_body.rs:17:18
+   |
+17 |     let _ = old::old_api();
+   |                  ^^^^^^^
+   |
+note: the lint level is defined here
+  --> tests/ui/typeck/deprecated_in_body.rs:3:9
+   |
+ 3 | #![deny(deprecated)]
+   |         ^^^^^^^^^^
+
+error: use of deprecated tuple struct `old::OldType`: use `NewType`
+  --> tests/ui/typeck/deprecated_in_body.rs:24:18
+   |
+24 |     let _ = old::OldType(n);
+   |                  ^^^^^^^

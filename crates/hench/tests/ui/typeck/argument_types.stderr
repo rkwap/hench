@@ -1,0 +1,81 @@
+error[E0277]: the trait bound `NotSerializable: serde::Deserialize<'de>` is not satisfied
+ --> tests/ui/typeck/argument_types.rs:3:1
+  |
+3 | #[hench::job]
+  | ^^^^^^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `serde_core::de::Deserialize<'_>` is not implemented for `NotSerializable`
+ --> tests/ui/typeck/argument_types.rs:1:1
+  |
+1 | struct NotSerializable;
+  | ^^^^^^^^^^^^^^^^^^^^^^
+  = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `NotSerializable` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `serde_core::de::Deserialize<'de>`:
+            &'a Path
+            &'a [u8]
+            &'a hench::__private::serde_json::raw::RawValue
+            &'a str
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+          and $N others
+  = note: required for `(NotSerializable,)` to implement `for<'de> serde_core::de::Deserialize<'de>`
+  = note: required for `<takes_unserializable as hench::Job>::Args` to implement `serde_core::de::DeserializeOwned`
+note: required by a bound in `hench::Job::Args`
+ --> src/job.rs
+  |
+  |     type Args: Serialize + DeserializeOwned + Send + 'static;
+  |                            ^^^^^^^^^^^^^^^^ required by this bound in `Job::Args`
+  = note: this error originates in the attribute macro `hench::job` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `NotSerializable: serde::Serialize` is not satisfied
+ --> tests/ui/typeck/argument_types.rs:3:1
+  |
+3 | #[hench::job]
+  | ^^^^^^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `serde_core::ser::Serialize` is not implemented for `NotSerializable`
+ --> tests/ui/typeck/argument_types.rs:1:1
+  |
+1 | struct NotSerializable;
+  | ^^^^^^^^^^^^^^^^^^^^^^
+  = note: for local types consider adding `#[derive(serde::Serialize)]` to your `NotSerializable` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `serde_core::ser::Serialize`:
+            &'a T
+            &'a mut T
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+            (T0, T1, T2, T3)
+            (T0, T1, T2, T3, T4)
+          and $N others
+  = note: required for `(NotSerializable,)` to implement `serde_core::ser::Serialize`
+note: required by a bound in `hench::Job::Args`
+ --> src/job.rs
+  |
+  |     type Args: Serialize + DeserializeOwned + Send + 'static;
+  |                ^^^^^^^^^ required by this bound in `Job::Args`
+  = note: this error originates in the attribute macro `hench::job` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `Result<(), std::string::String>` is not a valid return type for a `#[hench::job]` function
+ --> tests/ui/typeck/argument_types.rs:9:37
+  |
+9 | async fn wrong_error(fail: bool) -> Result<(), String> {
+  |                                     ^^^^^^^^^^^^^^^^^^ return `()` or `Result<(), E>` where `E` converts into `hench::JobError`
+  |
+  = help: the trait `hench::__private::JobReturn` is not implemented for `Result<(), std::string::String>`
+  = note: `E` can be `hench::JobError`, `anyhow::Error` (`anyhow::Result<()>`) or any type implementing `std::error::Error + Send + Sync + 'static`; `String` and `Box<dyn Error>` are not: convert them with `.map_err(JobError::msg)` or `.map_err(JobError::from_boxed)`
+help: the trait `hench::__private::JobReturn` is implemented for `()`
+ --> src/lib.rs
+  |
+  |     impl JobReturn for () {
+  |     ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `hench::__private::into_job_result`
+ --> src/lib.rs
+  |
+  |     pub fn into_job_result<R: JobReturn>(result: R) -> Result<(), JobError> {
+  |                               ^^^^^^^^^ required by this bound in `into_job_result`

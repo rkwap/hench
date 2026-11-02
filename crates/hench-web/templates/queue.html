@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="panel" aria-labelledby="queue-heading">
+  <header class="panel-head">
+    <div>
+      <h1 id="queue-heading">{{ heading }}
+        {% if paused %}<span class="chip chip-warn">{{ s.paused }}</span>{% endif %}
+        <span class="count-badge">{{ total }}</span>
+      </h1>
+    </div>
+    {% if !layout.read_only %}
+    <form method="post" action="{{ queue_url }}" class="panel-tools">
+      <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+      <input type="hidden" name="return_to" value="queue">
+      {% if paused %}
+      <button type="submit" class="btn" name="unpause" value="1">{{ s.unpause }}</button>
+      {% else %}
+      <button type="submit" class="btn btn-warn" name="pause" value="1">{{ s.pause }}</button>
+      {% endif %}
+      <button type="submit" class="btn btn-danger" name="delete" value="1" data-confirm="{{ s.confirm_delete_queue }}">{{ s.delete_queue }}</button>
+    </form>
+    {% endif %}
+  </header>
+
+  <div class="toolbar">
+    <nav class="segmented" aria-label="{{ s.position }}">
+      <a href="{{ newest_href }}"{% if !ascending %} aria-current="true"{% endif %}>{{ s.newest_first }}</a>
+      <a href="{{ oldest_href }}"{% if ascending %} aria-current="true"{% endif %}>{{ s.oldest_first }}</a>
+    </nav>
+    {% include "partials/filter.html" %}
+  </div>
+  {% if let Some(summary) = filter_summary %}<p class="filter-summary">{{ summary }}</p>{% endif %}
+  {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+
+  {% if rows.is_empty() %}
+  <p class="empty">{{ empty_text }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ heading }}</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="num">{{ s.position }}</th>
+          <th scope="col">{{ s.job }}</th>
+          <th scope="col">{{ s.arguments }}</th>
+          <th scope="col">{{ s.enqueued_at }}</th>
+          {% if !layout.read_only %}<th scope="col"><span class="sr-only">{{ s.actions }}</span></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr title="{{ row.jid }}">
+          <td class="num">{{ row.position }}</td>
+          <td>{% include "partials/job_class.html" %}</td>
+          <td class="args-cell">{% include "partials/job_args.html" %}</td>
+          <td>{% if let Some(t) = row.at %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>{% endif %}</td>
+          {% if !layout.read_only %}
+          <td class="actions">
+            <form method="post" action="{{ delete_url }}">
+              <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+              <input type="hidden" name="key" value="{{ row.key }}">
+              <button type="submit" class="btn btn-sm btn-danger" name="delete" value="1" data-confirm="{{ s.confirm_delete_job }}">{{ s.delete }}</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

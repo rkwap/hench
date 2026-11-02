@@ -1,0 +1,1 @@
+{% if let Some(iteration) = row.iteration %}<div class="iteration"><span class="sr-only">{{ s.iteration }}: </span>{{ iteration.text }}{% if iteration.cancelled %} <span class="chip chip-warn">{{ s.cancelled }}</span>{% endif %}</div>{% endif %}

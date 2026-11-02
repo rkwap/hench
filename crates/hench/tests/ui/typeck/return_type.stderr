@@ -1,0 +1,37 @@
+error[E0277]: `Result<std::string::String, JobError>` is not a valid return type for a `#[hench::job]` function
+ --> tests/ui/typeck/return_type.rs:2:31
+  |
+2 | async fn returns_a_value() -> Result<String, hench::JobError> {
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ return `()` or `Result<(), E>` where `E` converts into `hench::JobError`
+  |
+  = help: the trait `hench::__private::JobReturn` is not implemented for `Result<std::string::String, JobError>`
+  = note: `E` can be `hench::JobError`, `anyhow::Error` (`anyhow::Result<()>`) or any type implementing `std::error::Error + Send + Sync + 'static`; `String` and `Box<dyn Error>` are not: convert them with `.map_err(JobError::msg)` or `.map_err(JobError::from_boxed)`
+help: the trait `hench::__private::JobReturn` is implemented for `()`
+ --> src/lib.rs
+  |
+  |     impl JobReturn for () {
+  |     ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `hench::__private::into_job_result`
+ --> src/lib.rs
+  |
+  |     pub fn into_job_result<R: JobReturn>(result: R) -> Result<(), JobError> {
+  |                               ^^^^^^^^^ required by this bound in `into_job_result`
+
+error[E0277]: `u32` is not a valid return type for a `#[hench::job]` function
+ --> tests/ui/typeck/return_type.rs:7:32
+  |
+7 | async fn returns_a_number() -> u32 {
+  |                                ^^^ return `()` or `Result<(), E>` where `E` converts into `hench::JobError`
+  |
+  = help: the trait `hench::__private::JobReturn` is not implemented for `u32`
+  = note: `E` can be `hench::JobError`, `anyhow::Error` (`anyhow::Result<()>`) or any type implementing `std::error::Error + Send + Sync + 'static`; `String` and `Box<dyn Error>` are not: convert them with `.map_err(JobError::msg)` or `.map_err(JobError::from_boxed)`
+help: the trait `hench::__private::JobReturn` is implemented for `()`
+ --> src/lib.rs
+  |
+  |     impl JobReturn for () {
+  |     ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `hench::__private::into_job_result`
+ --> src/lib.rs
+  |
+  |     pub fn into_job_result<R: JobReturn>(result: R) -> Result<(), JobError> {
+  |                               ^^^^^^^^^ required by this bound in `into_job_result`

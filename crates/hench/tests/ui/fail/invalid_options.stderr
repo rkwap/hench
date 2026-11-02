@@ -1,0 +1,95 @@
+error: unknown option `queu`; expected one of: name, queue, retry, backtrace, dead, tags, retry_for, retry_queue, log_level, unique_for, unique_until, on_conflict, unique_across_queues, unique_by, throttle, throttle_by, crate
+ --> tests/ui/fail/invalid_options.rs:1:14
+  |
+1 | #[hench::job(queu = "default")]
+  |              ^^^^
+
+error: duplicate option `queue`
+ --> tests/ui/fail/invalid_options.rs:4:27
+  |
+4 | #[hench::job(queue = "a", queue = "b")]
+  |                           ^^^^^
+
+error: expected `dead = ...`
+ --> tests/ui/fail/invalid_options.rs:7:14
+  |
+7 | #[hench::job(dead)]
+  |              ^^^^
+
+error: `queue` must not be empty
+  --> tests/ui/fail/invalid_options.rs:10:22
+   |
+10 | #[hench::job(queue = "")]
+   |                      ^^
+
+error: expected a string literal, e.g. `queue = "..."`
+  --> tests/ui/fail/invalid_options.rs:13:22
+   |
+13 | #[hench::job(queue = default)]
+   |                      ^^^^^^^
+
+error: expected `true`, `false` or a maximum number of retries
+  --> tests/ui/fail/invalid_options.rs:16:22
+   |
+16 | #[hench::job(retry = "yes")]
+   |                      ^^^^^
+
+error: expected `true`, `false` or a maximum number of retries, not a negative number
+  --> tests/ui/fail/invalid_options.rs:19:22
+   |
+19 | #[hench::job(retry = -1)]
+   |                      ^
+
+error: expected `true`, `false` or a number of lines
+  --> tests/ui/fail/invalid_options.rs:22:26
+   |
+22 | #[hench::job(backtrace = 1.5)]
+   |                          ^^^
+
+error: expected `true` or `false`
+  --> tests/ui/fail/invalid_options.rs:25:21
+   |
+25 | #[hench::job(dead = 0)]
+   |                     ^
+
+error: expected an array of string literals, e.g. `tags = ["billing"]`
+  --> tests/ui/fail/invalid_options.rs:28:21
+   |
+28 | #[hench::job(tags = "billing")]
+   |                     ^^^^^^^^^
+
+error: expected an array of string literals, e.g. `tags = ["billing"]`
+  --> tests/ui/fail/invalid_options.rs:31:33
+   |
+31 | #[hench::job(tags = ["billing", 7])]
+   |                                 ^
+
+error: `retry_for` must be a relative amount of time below 1000000000 seconds
+  --> tests/ui/fail/invalid_options.rs:34:26
+   |
+34 | #[hench::job(retry_for = 1000000000)]
+   |                          ^^^^^^^^^^
+
+error: expected a number of seconds, e.g. `retry_for = 3600`
+  --> tests/ui/fail/invalid_options.rs:37:26
+   |
+37 | #[hench::job(retry_for = "1h")]
+   |                          ^^^^
+
+error: `name` must not be empty
+  --> tests/ui/fail/invalid_options.rs:40:21
+   |
+40 | #[hench::job(name = "")]
+   |                     ^^
+
+error: expected the path of the hench crate as a string, e.g. `crate = "::hench"`
+  --> tests/ui/fail/invalid_options.rs:43:22
+   |
+43 | #[hench::job(crate = hench)]
+   |                      ^^^^^
+
+error: expected one of: trace, debug, info, warn, error
+  --> tests/ui/fail/invalid_options.rs:48:26
+   |
+48 | #[hench::job(log_level = "loud")]
+   |                          ^^^^^^

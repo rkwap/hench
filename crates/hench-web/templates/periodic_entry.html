@@ -1,0 +1,177 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ layout.assets.periodic_css }}">
+{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="periodic-heading">
+  <header class="panel-head">
+    <div>
+      <h1 id="periodic-heading">{{ heading }}</h1>
+      <div class="periodic-chips">
+        {% if view.paused %}<span class="chip chip-muted periodic-paused">{{ t.paused }}</span>{% endif %}
+        {% if let Some(group) = view.group %}<span class="chip chip-tag periodic-source">{{ group }}</span>{% else %}<span class="chip chip-tag periodic-source">{{ t.api }}</span>{% endif %}
+        {% if view.late %}<span class="chip chip-warn periodic-late">{{ t.late }}</span>{% endif %}
+        {% if view.error.is_some() %}<span class="chip chip-warn periodic-error">{{ t.error }}</span>{% endif %}
+      </div>
+    </div>
+    <a class="btn btn-ghost" href="{{ list_href }}">{{ s.go_back }}</a>
+  </header>
+  {% for banner in banners %}
+  <div class="notice notice-warning periodic-banner" role="status">{{ banner }}</div>
+  {% endfor %}
+  <h2 class="sr-only">{{ t.definition }}</h2>
+  <div class="table-wrap">
+    <table class="kv periodic-definition">
+      <tbody>
+        <tr><th scope="row">{{ t.name }}</th><td><code>{{ view.shown }}</code></td></tr>
+        <tr><th scope="row">{{ t.source }}</th><td>{{ view.source }}</td></tr>
+        {% if let Some(description) = view.description %}<tr><th scope="row">{{ t.description }}</th><td class="pre-wrap periodic-description">{{ description }}</td></tr>{% endif %}
+        <tr><th scope="row">{{ t.timetable }}</th><td>{% if let Some(expression) = view.timetable.expression %}<code class="periodic-expression">{{ expression }}</code> {% endif %}<span class="periodic-timetable">{{ view.timetable.description }}</span></td></tr>
+        <tr>
+          <th scope="row">{{ t.upcoming }}</th>
+          <td>
+            {% if upcoming.is_empty() %}
+            <span class="muted">{{ upcoming_empty }}</span>
+            {% else %}
+            <ol class="periodic-upcoming">
+              {% for tick in upcoming %}
+              <li><time{% if !tick.at.iso.is_empty() %} datetime="{{ tick.at.iso }}"{% endif %} title="{{ tick.at.utc }}">{{ tick.at.local }}</time> <span class="muted">({{ tick.at.text }})</span>{% if let Some(note) = tick.note %}<div class="periodic-dst">{{ note }}</div>{% endif %}</li>
+              {% endfor %}
+            </ol>
+            {% endif %}
+          </td>
+        </tr>
+        <tr><th scope="row">{{ t.catch_up }}</th><td>{{ view.catch_up }}</td></tr>
+        <tr>
+          <th scope="row">{{ t.job_template }}</th>
+          <td>
+            {% if let Some(job) = view.job %}<span class="job-class">{{ job.class }}</span> <a class="queue-name periodic-queue" href="{{ job.queue_href }}">{{ job.queue }}</a>{% endif %}
+            <pre class="code periodic-template">{{ template }}</pre>
+          </td>
+        </tr>
+        <tr><th scope="row">{{ t.created }}</th><td>{% if let Some(at) = view.created %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.utc }}</span>{% else %}{{ s.unknown }}{% endif %}</td></tr>
+        <tr><th scope="row">{{ t.updated }}</th><td>{% if let Some(at) = view.updated %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.utc }}</span>{% else %}{{ s.unknown }}{% endif %}</td></tr>
+        <tr><th scope="row">{{ t.digest }}</th><td><code class="periodic-digest">{{ view.digest }}</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="state-heading">
+  <header class="panel-head"><h2 id="state-heading">{{ t.state }}</h2></header>
+  <div class="table-wrap">
+    <table class="kv periodic-state">
+      <tbody>
+        <tr>
+          <th scope="row">{{ t.next_run }}</th>
+          <td class="periodic-next">{% if view.paused %}<span class="muted">{{ t.paused }}</span>{% else if let Some(at) = view.next %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.local }}</span>{% else %}{{ s.unknown }}{% endif %}</td>
+        </tr>
+        {% if let Some(at) = view.paused_at %}<tr><th scope="row">{{ t.paused_since }}</th><td><time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time> <span class="muted">{{ at.utc }}</span></td></tr>{% endif %}
+        <tr>
+          <th scope="row">{{ t.last_enqueue }}</th>
+          <td class="periodic-last">
+            {% if let Some(last) = view.last %}
+            {{ t.tick }} {{ last.tick.local }}: <span class="chip{% if last.warning %} chip-warn{% endif %} periodic-result">{{ last.result }}</span>
+            <time{% if !last.at.iso.is_empty() %} datetime="{{ last.at.iso }}"{% endif %} title="{{ last.at.utc }}" data-relative>{{ last.at.text }}</time>{% if let Some(late) = last.late %} ({{ late }}){% endif %}
+            {% if !last.jid.is_empty() %}<div class="periodic-detail">{{ s.jid }} <code>{{ last.jid }}</code>{% if !last.by.is_empty() %} · {{ last.by }}{% endif %}</div>{% else if !last.by.is_empty() %}<div class="periodic-detail">{{ last.by }}</div>{% endif %}
+            {% else %}
+            <span class="muted">{{ t.never }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% if let Some(manual) = view.manual %}
+        <tr>
+          <th scope="row">{{ t.last_manual }}</th>
+          <td class="periodic-manual"><time{% if !manual.at.iso.is_empty() %} datetime="{{ manual.at.iso }}"{% endif %} title="{{ manual.at.utc }}" data-relative>{{ manual.at.text }}</time>{% if !manual.jid.is_empty() %} <span class="periodic-detail">{{ s.jid }} <code>{{ manual.jid }}</code></span>{% endif %}</td>
+        </tr>
+        {% endif %}
+        <tr>
+          <th scope="row">{{ t.last_run }}</th>
+          <td class="periodic-run">
+            {% if let Some(run) = view.run %}
+            <span class="chip{% if run.failed %} chip-warn{% endif %} periodic-status">{{ run.status }}</span>
+            <time{% if !run.at.iso.is_empty() %} datetime="{{ run.at.iso }}"{% endif %} title="{{ run.at.utc }}" data-relative>{{ run.at.text }}</time> <span class="muted">{{ run.duration }}</span>
+            {% if !run.jid.is_empty() %}<div class="periodic-detail">{{ s.jid }} <code>{{ run.jid }}</code></div>{% endif %}
+            {% if let Some(error) = run.error %}<div class="pre-wrap periodic-run-error">{{ error }}</div>{% endif %}
+            {% else %}
+            <span class="muted">{{ t.never }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr><th scope="row">{{ t.counters }}</th><td class="periodic-counters">{{ view.counters }}</td></tr>
+        {% if let Some(error) = view.error %}
+        <tr><th scope="row">{{ t.parked }}</th><td class="periodic-parked"><span class="pre-wrap">{{ error.text }}</span>{% if let Some(at) = error.at %} <time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>{% endif %}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if !layout.read_only %}
+<form method="post" action="{{ action_href }}" class="panel entry-actions button-row">
+  <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  <input type="hidden" name="from" value="entry">
+  <button type="submit" class="btn btn-primary" name="action" value="enqueue" data-confirm="{{ t.confirm_enqueue }}">{{ t.enqueue_now }}</button>
+  {% if view.paused %}
+  <button type="submit" class="btn" name="action" value="unpause">{{ t.resume }}</button>
+  {% else %}
+  <button type="submit" class="btn" name="action" value="pause" data-confirm="{{ t.confirm_pause }}">{{ t.pause }}</button>
+  {% endif %}
+  {% if let Some(confirm) = delete_confirm %}
+  <button type="submit" class="btn btn-danger" name="action" value="delete" data-confirm="{{ confirm }}">{{ t.delete }}</button>
+  {% endif %}
+  <span class="muted periodic-actions-help">{{ t.actions_help }}{% if delete_confirm.is_none() %} {{ t.delete_help_code }}{% endif %}</span>
+</form>
+{% endif %}
+
+<section class="panel" aria-labelledby="history-heading">
+  <header class="panel-head">
+    <div>
+      <h2 id="history-heading">{{ t.history }}</h2>
+      <p class="panel-sub">{{ t.history_help }}</p>
+    </div>
+  </header>
+  {% if history.is_empty() %}
+  <p class="empty">{{ t.no_history }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data periodic-history">
+      <caption class="sr-only">{{ t.history }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t.tick }}</th>
+          <th scope="col">{{ t.handled_at }}</th>
+          <th scope="col">{{ t.lateness }}</th>
+          <th scope="col">{{ t.result }}</th>
+          <th scope="col">{{ s.jid }}</th>
+          <th scope="col">{{ t.by }}</th>
+          <th scope="col" class="num">{{ t.missed }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in history %}
+        <tr>
+          <td>{% if let Some(tick) = row.tick %}<span title="{{ tick.utc }}">{{ tick.local }}</span>{% else %}<span class="muted">{{ row.result }}</span>{% endif %}</td>
+          <td><time{% if !row.at.iso.is_empty() %} datetime="{{ row.at.iso }}"{% endif %} title="{{ row.at.utc }}" data-relative>{{ row.at.text }}</time></td>
+          <td>{{ row.late }}</td>
+          <td><span class="chip{% if row.warning %} chip-warn{% endif %} periodic-result">{{ row.result }}</span></td>
+          <td class="mono">{{ row.jid }}</td>
+          <td>{{ row.by }}</td>
+          <td class="num">{{ row.missed }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="raw-heading">
+  <details class="raw-json">
+    <summary id="raw-heading">{{ t.raw_hash }}</summary>
+    <pre class="code">{{ raw }}</pre>
+  </details>
+</section>
+{% endblock %}

@@ -1,0 +1,43 @@
+[package]
+name = "hench-web"
+description = "The hench web dashboard as an axum Router: live statistics, busy processes, queues, retries, scheduled and dead jobs, periodic schedules, batches, rate limits and unique-job locks, with their actions, and execution metrics."
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+# The dashboard and the `hench` command show and manage periodic jobs.
+hench = { workspace = true, features = ["periodic"] }
+axum.workspace = true
+askama.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+getrandom.workspace = true
+http.workspace = true
+futures.workspace = true
+subtle.workspace = true
+percent-encoding.workspace = true
+form_urlencoded.workspace = true
+sha1_smol.workspace = true
+# Bounds the `HEAD /` health check (already a dependency of axum and hench).
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+# The integration tests run a private redis-server each (`hench::test_util`).
+hench = { workspace = true, features = ["test-util"] }
+# `process`: the browser tests run Node.
+tokio = { workspace = true, features = ["test-util", "process"] }
+tower.workspace = true
+http-body-util.workspace = true
+scraper.workspace = true
+anyhow.workspace = true
+# The `embedded` example.
+tracing-subscriber.workspace = true

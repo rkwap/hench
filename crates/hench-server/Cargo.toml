@@ -1,0 +1,61 @@
+[package]
+name = "hench-server"
+description = "The hench command: a standalone hench dashboard with authentication, a JSON API, and sidekiqmon-style command-line tools for the processes, queues, periodic schedules, batches, rate limits and unique-job locks of a hench cluster."
+# A link to the workspace's README (the package carries it as a file); `src/lib.rs` includes it
+# for the README's doc tests.
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["tls"]
+## `rediss://` (TLS) Redis URLs.
+tls = ["hench/tls"]
+
+[lib]
+name = "hench_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hench"
+path = "src/main.rs"
+# The binary shares its name with the `hench` library; documenting both would make their
+# docs overwrite each other (cargo#6313).
+doc = false
+
+[dependencies]
+# The dashboard and the `hench` command show and manage periodic jobs.
+hench = { workspace = true, features = ["periodic"] }
+hench-web.workspace = true
+axum.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+base64.workspace = true
+subtle.workspace = true
+http.workspace = true
+
+[dev-dependencies]
+# The integration tests run a private redis-server each (`hench::test_util`); the README's
+# examples (doc tests of this crate) use the worker command line (`cli`).
+hench = { workspace = true, features = ["test-util", "cli"] }
+tokio = { workspace = true, features = ["test-util", "process", "io-util"] }
+tower.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+# Sends SIGTERM to the server in the graceful-shutdown test.
+libc.workspace = true

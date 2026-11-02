@@ -1,0 +1,77 @@
+error: expected the name of a throttle, such as `throttle = "stripe"`
+ --> tests/ui/fail/throttle_options.rs:1:25
+  |
+1 | #[hench::job(throttle = "")]
+  |                         ^^
+
+error: expected the name of a throttle, such as `throttle = "stripe"`
+ --> tests/ui/fail/throttle_options.rs:4:25
+  |
+4 | #[hench::job(throttle = 5)]
+  |                         ^
+
+error: unknown limit `rate`; expected concurrency, window, bucket, leaky or points (optionally `_per_key`)
+ --> tests/ui/fail/throttle_options.rs:7:23
+  |
+7 | #[hench::job(throttle(rate = 3))]
+  |                       ^^^^
+
+error: invalid limit `window=5`: this kind needs a period (`/1s`)
+  --> tests/ui/fail/throttle_options.rs:10:32
+   |
+10 | #[hench::job(throttle(window = "5"))]
+   |                                ^^^
+
+error: invalid limit `concurrency=0`: the count must be at least 1
+  --> tests/ui/fail/throttle_options.rs:13:37
+   |
+13 | #[hench::job(throttle(concurrency = 0))]
+   |                                     ^
+
+error: invalid limit `window=5/0s`: `0s` is not a positive whole number of milliseconds
+  --> tests/ui/fail/throttle_options.rs:16:32
+   |
+16 | #[hench::job(throttle(window = "5/0s"))]
+   |                                ^^^^^^
+
+error: expected at least one limit, such as `throttle(concurrency = 3)`
+  --> tests/ui/fail/throttle_options.rs:19:14
+   |
+19 | #[hench::job(throttle())]
+   |              ^^^^^^^^^^
+
+error: expected at least one parameter, such as `[account]`
+  --> tests/ui/fail/throttle_options.rs:22:14
+   |
+22 | #[hench::job(throttle_by = [])]
+   |              ^^^^^^^^^^^^^^^^
+
+error: expected square brackets
+  --> tests/ui/fail/throttle_options.rs:25:28
+   |
+25 | #[hench::job(throttle_by = account)]
+   |                            ^^^^^^^
+
+error: `throttle_by` keys a throttle: name one too (`throttle = "name"` or `throttle(..)`)
+  --> tests/ui/fail/throttle_options.rs:28:14
+   |
+28 | #[hench::job(throttle_by = [account])]
+   |              ^^^^^^^^^^^
+
+error: `acount` is not an argument of the job: its arguments are `account`
+  --> tests/ui/fail/throttle_options.rs:33:50
+   |
+33 | #[hench::job(throttle = "stripe", throttle_by = [acount])]
+   |                                                  ^^^^^^
+
+error: the job context is not an argument: `throttle_by` takes the job's arguments
+  --> tests/ui/fail/throttle_options.rs:38:50
+   |
+38 | #[hench::job(throttle = "stripe", throttle_by = [ctx])]
+   |                                                  ^^^
+
+error: the per-key limits of this throttle (`concurrency_per_key`) need a key, and the job has none: add `throttle_by = [..]` with the arguments that make the key (its arguments are `account`), or define the throttle with `HenchBuilder::throttle` and name it (`throttle = "name"`) to give each push its key (`throttle_key`)
+  --> tests/ui/fail/throttle_options.rs:43:14
+   |
+43 | #[hench::job(throttle(concurrency_per_key = 1))]
+   |              ^^^^^^^^

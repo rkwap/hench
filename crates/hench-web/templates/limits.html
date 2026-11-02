@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+
+{% block head %}<link rel="stylesheet" href="{{ layout.assets.limits_css }}">{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="limits-heading">
+  <header class="panel-head">
+    <h1 id="limits-heading">{{ t.heading }} <span class="count-badge">{{ total }}</span></h1>
+    {% include "partials/filter.html" %}
+  </header>
+  <div class="limits-summary">
+    <p>{{ summary }}</p>
+    {% if !most_refused.is_empty() %}
+    <p class="limits-refused">
+      <span class="muted">{{ t.most_refused }}:</span>
+      {% for name in most_refused %}<span class="chip chip-warn">{{ name }}</span> {% endfor %}
+    </p>
+    {% endif %}
+    <nav class="limits-sort" aria-label="{{ t.sort_by }}">
+      <span class="muted">{{ t.sort_by }}:</span>
+      {% for link in sorts %}<a class="pager-link" href="{{ link.href }}"{% if link.active %} aria-current="true"{% endif %}>{{ link.label }}</a>{% endfor %}
+      <span class="muted limits-sort-help">{{ t.sort_help }}</span>
+    </nav>
+  </div>
+
+  {% if rows.is_empty() %}
+  <p class="empty">{{ empty_text }}</p>
+  {% else %}
+  {% if !layout.read_only %}
+  <form method="post" action="{{ list_url }}" class="bulk-form" data-bulk-form>
+    <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+    <input type="hidden" name="sort" value="{{ sort }}">
+  {% endif %}
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+    <div class="table-wrap">
+      <table class="data limits-table">
+        <caption class="sr-only">{{ t.heading }}</caption>
+        <thead>
+          <tr>
+            {% if !layout.read_only %}
+            <th scope="col" class="check-cell">
+              <input type="checkbox" class="check-all" data-check-all aria-label="{{ s.select_all }}" hidden>
+            </th>
+            {% endif %}
+            <th scope="col">{{ t.limit }}</th>
+            <th scope="col">{{ t.kind }}</th>
+            <th scope="col">{{ t.spec }}</th>
+            <th scope="col">{{ t.usage }}</th>
+            <th scope="col">{{ t.next_free }}</th>
+            <th scope="col" class="num">{{ t.granted }}</th>
+            <th scope="col" class="num">{{ t.refused }}</th>
+            <th scope="col">{{ t.wait_line }}</th>
+            <th scope="col">{{ t.last_used }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            {% if !layout.read_only %}
+            <td class="check-cell">
+              <input type="checkbox" name="identity" value="{{ row.identity }}" data-check-item aria-label="{{ t.select_limit }} {{ row.label }}">
+            </td>
+            {% endif %}
+            <th scope="row"><a class="limit-name mono" href="{{ row.href }}">{{ row.label }}</a></th>
+            <td><span class="chip limit-kind limit-kind-{{ row.kind }}">{{ row.kind }}</span></td>
+            <td class="mono">{{ row.spec }}</td>
+            <td>
+              <span class="usage">
+                {% if let Some(fill) = row.usage.fill %}<span class="usage-bar" aria-hidden="true"><span class="usage-fill fill-{{ fill }} usage-{{ row.usage.level }}"></span></span>{% endif %}
+                <span class="usage-text">{{ row.usage.text }}</span>
+              </span>
+            </td>
+            <td>{{ row.next_free }}</td>
+            <td class="num">{{ row.granted }}</td>
+            <td class="num">{{ row.refused }}</td>
+            <td>{% if let Some(line) = row.line %}<span class="chip chip-warn">{{ line }}</span>{% endif %}</td>
+            <td>{% if let Some(t) = row.last_used %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+    {% if !layout.read_only %}
+    <div class="bulk-actions">
+      <div class="button-row" role="group" aria-label="{{ s.selected }}">
+        <span class="button-row-label">{{ s.selected }}</span>
+        <button type="submit" class="btn btn-danger" name="reset" value="1" data-needs-selection data-confirm="{{ t.confirm_reset_selected }}">{{ t.reset_selected }}</button>
+      </div>
+    </div>
+  </form>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% if !throttles.is_empty() %}
+<section class="panel" aria-labelledby="throttles-heading">
+  <header class="panel-head"><h2 id="throttles-heading">{{ t.throttles }}</h2></header>
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ t.throttles }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t.throttle }}</th>
+          <th scope="col">{{ t.spec }}</th>
+          <th scope="col">{{ t.processes }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for throttle in throttles %}
+        {% for spec in throttle.specs %}
+        <tr>
+          <th scope="row">{% if loop.first %}<a class="mono" href="{{ throttle.href }}">{{ throttle.name }}</a>{% if throttle.differs %} <span class="chip chip-warn">{{ t.differs }}</span>{% endif %}{% endif %}</th>
+          <td class="mono">{{ spec.0 }}</td>
+          <td>{{ spec.1 }}</td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

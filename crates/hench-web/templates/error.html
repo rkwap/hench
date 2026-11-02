@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="panel error-panel" aria-labelledby="error-heading">
+  <p class="error-code">{{ code }}</p>
+  <h1 id="error-heading">{{ heading }}</h1>
+  <p class="error-message">{{ message }}</p>
+  <p><a class="btn" href="{{ layout.home }}">{{ s.back_to_dashboard }}</a></p>
+</section>
+{% endblock %}

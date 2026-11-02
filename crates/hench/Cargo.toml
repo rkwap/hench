@@ -1,0 +1,245 @@
+[package]
+name = "hench"
+description = "Simple, efficient, Redis-backed background job processing for Rust, inspired by Sidekiq."
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+# Checks of the repository rather than of the crate: the macro crate's option table
+# (`../hench-macros/src/spec.rs`) and the workspace README. Neither file is in this package.
+exclude = ["tests/spec_parity.rs", "tests/readme.rs"]
+
+[package.metadata.docs.rs]
+# Document every feature (`cli`, `periodic`, `test-util`, `tls`), marking what each item needs.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["macros", "periodic"]
+## `#[hench::job]` attribute macro.
+macros = ["dep:hench-macros"]
+## Periodic (cron) jobs: `hench::periodic::Periodic`, the periodic poller and `PeriodicSet`.
+## Brings the cron parser (`croner`) and the time-zone library (`jiff`, with its bundled
+## time-zone database as a fallback).
+periodic = ["dep:croner", "dep:jiff"]
+## TLS (`rediss://`) support via rustls with its `ring` crypto provider, which hench installs as
+## rustls's process-wide default when it creates a `rediss://` client and none is installed
+## (install another one before to use it). Includes the explicit opt-outs of certificate
+## verification (`TlsConfig::danger_*`, `#insecure`).
+tls = ["redis/tokio-rustls-comp", "redis/tls-rustls-insecure", "dep:rustls"]
+## `hench::test_util` (a private `redis-server` per test). For tests only.
+test-util = ["dep:tempfile"]
+## `hench::cli`: command-line options (clap) and a TOML configuration file for worker binaries.
+cli = ["dep:clap", "dep:toml"]
+
+[dependencies]
+hench-macros = { workspace = true, optional = true }
+tokio.workspace = true
+tokio-util.workspace = true
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+getrandom.workspace = true
+fastrand.workspace = true
+flate2.workspace = true
+base64.workspace = true
+inventory.workspace = true
+hostname.workspace = true
+futures.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+sha2.workspace = true
+croner = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+# Integration tests use `hench::test_util`, so they need the crate built with `test-util`. (This
+# path-only dev-dependency is left out of the published crate, whose tests that need the feature
+# declare it below: `cargo test --features test-util`.)
+hench = { path = ".", features = ["test-util"] }
+# `process` and `io-util`: the soak example spawns processes and runs a TCP proxy.
+tokio = { workspace = true, features = ["test-util", "process", "io-util"] }
+tempfile.workspace = true
+proptest.workspace = true
+anyhow.workspace = true
+tracing-subscriber.workspace = true
+trybuild.workspace = true
+# The axum_embedded example.
+axum.workspace = true
+# The soak example's command line.
+clap.workspace = true
+
+[[example]]
+name = "worker"
+required-features = ["cli"]
+
+# The four features in one program that checks itself, on a private `redis-server` (CI runs
+# it: `cargo run -p hench --example features --features test-util`).
+[[example]]
+name = "features"
+required-features = ["test-util", "macros", "periodic"]
+
+# The multi-process soak and chaos harness (Unix; see examples/soak/main.rs and ci/soak.sh).
+# `cargo test` runs the unit tests of its checker.
+[[example]]
+name = "soak"
+path = "examples/soak/main.rs"
+test = true
+required-features = ["periodic"]
+
+# The integration tests that start a `redis-server` through `hench::test_util`.
+[[test]]
+name = "api"
+required-features = ["test-util"]
+
+[[test]]
+name = "api_dashboard"
+required-features = ["test-util"]
+
+[[test]]
+name = "api_engine"
+required-features = ["test-util"]
+
+[[test]]
+name = "chaos"
+required-features = ["test-util"]
+
+[[test]]
+name = "client"
+required-features = ["test-util"]
+
+[[test]]
+name = "e2e"
+required-features = ["test-util"]
+
+[[test]]
+name = "embedding"
+required-features = ["test-util"]
+
+[[test]]
+name = "featureless"
+required-features = ["test-util"]
+
+[[test]]
+name = "pro_features"
+required-features = ["test-util"]
+
+[[test]]
+name = "fetch"
+required-features = ["test-util"]
+
+[[test]]
+name = "iterable"
+required-features = ["test-util"]
+
+[[test]]
+name = "job"
+required-features = ["test-util"]
+
+[[test]]
+name = "launcher"
+required-features = ["test-util"]
+
+[[test]]
+name = "logging"
+required-features = ["test-util"]
+
+[[test]]
+name = "metrics"
+required-features = ["test-util"]
+
+[[test]]
+name = "middleware"
+required-features = ["test-util"]
+
+[[test]]
+name = "processor"
+required-features = ["test-util"]
+
+[[test]]
+name = "redis"
+required-features = ["test-util"]
+
+[[test]]
+name = "retry"
+required-features = ["test-util"]
+
+[[test]]
+name = "scheduled"
+required-features = ["test-util"]
+
+[[test]]
+name = "sentinel"
+required-features = ["test-util"]
+
+[[test]]
+name = "signals"
+required-features = ["test-util"]
+
+[[test]]
+name = "systemd"
+required-features = ["test-util"]
+
+[[test]]
+name = "testing"
+required-features = ["test-util"]
+
+# The features' tests (batches, rate limiting and throttles) that start a `redis-server`.
+[[test]]
+name = "batch"
+required-features = ["test-util"]
+
+[[test]]
+name = "batch_api"
+required-features = ["test-util"]
+
+[[test]]
+name = "batch_chaos"
+required-features = ["test-util"]
+
+[[test]]
+name = "batch_engine"
+required-features = ["test-util"]
+
+[[test]]
+name = "batch_testing"
+required-features = ["test-util"]
+
+[[test]]
+name = "limit"
+required-features = ["test-util"]
+
+[[test]]
+name = "limit_chaos"
+required-features = ["test-util"]
+
+[[test]]
+name = "limit_engine"
+required-features = ["test-util"]
+
+[[test]]
+name = "limits_api"
+required-features = ["test-util"]
+
+[[test]]
+name = "throttle"
+required-features = ["test-util"]
+
+[[test]]
+name = "throttle_chaos"
+required-features = ["test-util"]

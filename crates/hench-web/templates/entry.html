@@ -1,0 +1,90 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="panel" aria-labelledby="entry-heading">
+  <header class="panel-head">
+    <h1 id="entry-heading">{{ heading }}</h1>
+    <a class="btn btn-ghost" href="{{ entry.list_href }}">{{ s.go_back }}</a>
+  </header>
+  {% if let Some(problem) = entry.invalid %}
+  <div class="notice notice-warning" role="status">{{ s.invalid_json }}: {{ problem }}</div>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="kv">
+      <tbody>
+        <tr><th scope="row">{{ s.queue }}</th><td>{% if !entry.queue.is_empty() %}<a href="{{ entry.queue_href }}">{{ entry.queue }}</a>{% endif %}</td></tr>
+        <tr><th scope="row">{{ s.job }}</th><td><span class="job-class">{{ entry.class }}</span></td></tr>
+        {% if !entry.tags.is_empty() %}
+        <tr><th scope="row">{{ s.tags }}</th><td>
+          {% for tag in entry.tags %}{% if let Some(href) = tag.href %}<a class="chip chip-tag" href="{{ href }}">{{ tag.name }}</a>{% else %}<span class="chip chip-tag">{{ tag.name }}</span>{% endif %} {% endfor %}
+        </td></tr>
+        {% endif %}
+        <tr><th scope="row">{{ s.arguments }}</th><td>
+          <ol class="arg-list">
+            {% for arg in entry.args %}<li><pre class="code">{{ arg }}</pre></li>{% endfor %}
+          </ol>
+        </td></tr>
+        <tr><th scope="row">{{ s.jid }}</th><td><code>{{ entry.jid }}</code></td></tr>
+        {% if let Some(iteration) = entry.iteration %}<tr><th scope="row">{{ s.iteration }}</th><td class="iteration-detail"><code>{{ iteration.text }}</code>{% if iteration.cancelled %} <span class="chip chip-warn">{{ s.cancelled }}</span>{% endif %}</td></tr>{% endif %}
+        <tr><th scope="row">{{ s.created_at }}</th><td>{% if let Some(t) = entry.created %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time> <span class="muted">{{ t.utc }}</span>{% else %}{{ s.unknown }}{% endif %}</td></tr>
+        <tr><th scope="row">{{ s.enqueued_at }}</th><td>{% if let Some(t) = entry.enqueued %}<time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time> <span class="muted">{{ t.utc }}</span>{% else %}{{ s.not_enqueued }}{% endif %}</td></tr>
+        {% if is_retries || is_dead %}
+          {% if let Some(count) = entry.retry_count %}<tr><th scope="row">{{ s.retry_count }}</th><td>{{ count }}</td></tr>{% endif %}
+          {% if let Some(t) = entry.last_retry %}<tr><th scope="row">{{ s.last_retry }}</th><td><time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time> <span class="muted">{{ t.utc }}</span></td></tr>{% endif %}
+          {% if let Some(t) = entry.first_failed %}<tr><th scope="row">{{ s.first_failed }}</th><td><time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time> <span class="muted">{{ t.utc }}</span></td></tr>{% endif %}
+        {% endif %}
+        <tr><th scope="row">{{ time_label }}</th><td><time{% if !entry.at.iso.is_empty() %} datetime="{{ entry.at.iso }}"{% endif %} title="{{ entry.at.utc }}" data-relative>{{ entry.at.text }}</time> <span class="muted">{{ entry.at.utc }}</span></td></tr>
+        {% for extra in entry.extras %}
+        <tr><th scope="row">{{ s.extras }}: <code>{{ extra.0 }}</code></th><td><code class="args">{{ extra.1 }}</code></td></tr>
+        {% endfor %}
+        {% for row in entry.features %}
+        <tr><th scope="row">{{ row.label }}</th><td>{% if let Some(href) = row.href %}<a href="{{ href }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</td></tr>
+        {% endfor %}
+        {% for row in entry.custom %}
+        <tr><th scope="row">{{ row.label }}</th><td>{% if let Some(href) = row.href %}<a href="{{ href }}">{{ row.text }}</a>{% else %}{{ row.text }}{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if let Some(error) = entry.error %}
+<section class="panel" aria-labelledby="error-heading">
+  <header class="panel-head"><h2 id="error-heading">{{ s.error }}</h2></header>
+  <div class="table-wrap">
+    <table class="kv">
+      <tbody>
+        <tr><th scope="row">{{ s.error_class }}</th><td><code>{{ error.class }}</code></td></tr>
+        <tr><th scope="row">{{ s.error_message }}</th><td class="pre-wrap">{{ error.message }}</td></tr>
+        {% if !error.backtrace.is_empty() %}
+        <tr><th scope="row">{{ s.backtrace }}</th><td><pre class="code backtrace">{% for line in error.backtrace %}{{ line }}
+{% endfor %}</pre></td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="raw-heading">
+  <details class="raw-json">
+    <summary id="raw-heading">{{ s.raw_json }}</summary>
+    <pre class="code">{{ entry.raw }}</pre>
+  </details>
+</section>
+
+{% if !layout.read_only %}
+<form method="post" action="{{ entry.action_href }}" class="panel entry-actions button-row">
+  <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  {% if is_scheduled %}
+  <button type="submit" class="btn btn-primary" name="add_to_queue" value="1">{{ s.add_to_queue }}</button>
+  {% else %}
+  <button type="submit" class="btn btn-primary" name="retry" value="1">{{ s.retry_now }}</button>
+  {% endif %}
+  <button type="submit" class="btn btn-danger" name="delete" value="1" data-confirm="{{ s.confirm_delete_job }}{% if let Some(note) = entry.removal_note %} {{ note }}{% endif %}">{{ s.delete }}</button>
+  {% if is_retries %}
+  <button type="submit" class="btn btn-danger" name="kill" value="1" data-confirm="{{ s.confirm_kill_selected }}{% if let Some(note) = entry.removal_note %} {{ note }}{% endif %}">{{ s.kill }}</button>
+  {% endif %}
+</form>
+{% endif %}
+{% endblock %}

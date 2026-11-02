@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<section class="panel" aria-labelledby="queues-heading">
+  <header class="panel-head">
+    <h1 id="queues-heading">{{ s.queues }}</h1>
+  </header>
+  {% if queues.is_empty() %}
+  <p class="empty">{{ s.no_queues }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ s.queues }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.queue }}</th>
+          <th scope="col" class="num">{{ s.size }}</th>
+          <th scope="col" class="num">{{ s.latency }}</th>
+          {% if !layout.read_only %}<th scope="col"><span class="sr-only">{{ s.actions }}</span></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for queue in queues %}
+        <tr>
+          <th scope="row">
+            <a class="queue-name" href="{{ queue.href }}">{{ queue.name }}</a>
+            {% if queue.paused %}<span class="chip chip-warn">{{ s.paused }}</span>{% endif %}
+          </th>
+          <td class="num">{{ queue.size }}</td>
+          <td class="num">
+            {{ queue.latency }}
+            {% if let Some(t) = queue.since %}<span class="muted">({{ s.waiting_since }} <time{% if !t.iso.is_empty() %} datetime="{{ t.iso }}"{% endif %} title="{{ t.utc }}" data-relative>{{ t.text }}</time>)</span>{% endif %}
+          </td>
+          {% if !layout.read_only %}
+          <td class="actions">
+            <form method="post" action="{{ queue.href }}" class="button-row">
+              <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+              {% if queue.paused %}
+              <button type="submit" class="btn btn-sm" name="unpause" value="1">{{ s.unpause }}</button>
+              {% else %}
+              <button type="submit" class="btn btn-sm btn-warn" name="pause" value="1">{{ s.pause }}</button>
+              {% endif %}
+              <button type="submit" class="btn btn-sm btn-danger" name="delete" value="1" data-confirm="{{ s.confirm_delete_queue }}">{{ s.delete }}</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

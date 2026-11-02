@@ -1,0 +1,128 @@
+{% extends "layout.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ layout.assets.locks_css }}">
+{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="locks-heading">
+  <header class="panel-head">
+    <div>
+      <h1 id="locks-heading">{{ t.heading }} <span class="count-badge">{{ total }}</span></h1>
+      <p class="panel-sub locks-summary">{{ summary }} {{ events.sentence }}</p>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <nav class="segmented" aria-label="{{ t.order }}">
+      <a href="{{ soonest_href }}"{% if ascending %} aria-current="true"{% endif %}>{{ t.soonest_first }}</a>
+      <a href="{{ latest_href }}"{% if !ascending %} aria-current="true"{% endif %}>{{ t.latest_first }}</a>
+    </nav>
+    <form role="search" method="get" action="{{ list_url }}" class="filter-form">
+      <label for="filter-input">{{ s.filter }}</label>
+      <input id="filter-input" type="search" name="substr" value="{{ filter_value }}" placeholder="{{ t.filter_placeholder }}" maxlength="256" autocomplete="off" spellcheck="false">
+      {% if !ascending %}<input type="hidden" name="direction" value="desc">{% endif %}
+      <button type="submit" class="btn btn-sm">{{ s.apply_filter }}</button>
+      {% if !filter_value.is_empty() %}<a class="btn btn-sm btn-ghost" href="{{ list_url }}">{{ s.clear_filter }}</a>{% endif %}
+    </form>
+  </div>
+  {% if let Some(summary) = filter_summary %}<p class="filter-summary">{{ summary }}</p>{% endif %}
+
+  {% if rows.is_empty() %}
+  <p class="empty">{{ empty_text }}</p>
+  {% else %}
+  {% if !layout.read_only %}
+  <form method="post" action="{{ list_url }}" class="bulk-form" data-bulk-form>
+    <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  {% endif %}
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+    <div class="table-wrap">
+      <table class="data locks-table">
+        <caption class="sr-only">{{ t.heading }}</caption>
+        <thead>
+          <tr>
+            {% if !layout.read_only %}
+            <th scope="col" class="check-cell">
+              <input type="checkbox" class="check-all" data-check-all aria-label="{{ t.select_all }}" hidden>
+            </th>
+            {% endif %}
+            <th scope="col">{{ s.job }}</th>
+            <th scope="col">{{ s.queue }}</th>
+            <th scope="col">{{ t.policy }}</th>
+            <th scope="col">{{ t.holder }}</th>
+            <th scope="col">{{ t.locked }}</th>
+            <th scope="col">{{ t.expires }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            {% if !layout.read_only %}
+            <td class="check-cell">
+              <input type="checkbox" name="key" value="{{ row.key }}" data-check-item aria-label="{{ t.select_lock }} {{ row.jid }}">
+            </td>
+            {% endif %}
+            <td><span class="job-class">{{ row.class }}</span></td>
+            <td>{% if !row.queue.is_empty() %}<a href="{{ row.queue_href }}">{{ row.queue }}</a>{% endif %}</td>
+            <td><span class="chip lock-policy">{{ row.policy }}</span></td>
+            <td><a class="mono lock-holder-link" href="{{ row.href }}">{{ row.jid }}</a></td>
+            <td>{% if let Some(at) = row.locked %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>{% else %}{{ s.unknown }}{% endif %}</td>
+            <td>{% if let Some(at) = row.expires %}<time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>{% else %}{{ t.no_expiry }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
+    {% if !layout.read_only %}
+    <div class="bulk-actions">
+      <div class="button-row" role="group" aria-label="{{ t.selected }}">
+        <span class="button-row-label">{{ t.selected }}</span>
+        <button type="submit" class="btn btn-danger" name="release" value="1" data-needs-selection data-confirm="{{ t.confirm_release_selected }}">{{ t.release }}</button>
+      </div>
+      {% if let Some(confirm) = release_all %}
+      <div class="button-row" role="group" aria-label="{{ t.everything }}">
+        <span class="button-row-label">{{ t.everything }}</span>
+        <button type="submit" class="btn btn-danger" formaction="{{ list_url }}/all/release" data-confirm="{{ confirm }}">{{ t.release_all }}</button>
+      </div>
+      {% endif %}
+    </div>
+  </form>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% if !events.classes.is_empty() %}
+<section class="panel" aria-labelledby="locks-events-heading">
+  <header class="panel-head">
+    <div>
+      <h2 id="locks-events-heading">{{ t.last_hour }}</h2>
+      <p class="panel-sub">{{ t.last_hour_help }}</p>
+    </div>
+  </header>
+  <div class="table-wrap">
+    <table class="data locks-events">
+      <caption class="sr-only">{{ t.last_hour }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.job_class }}</th>
+          <th scope="col" class="num">{{ t.duplicates }}</th>
+          <th scope="col" class="num">{{ t.replaced }}</th>
+          <th scope="col" class="num">{{ t.lapsed }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in events.classes %}
+        <tr>
+          <td><span class="job-class">{{ row.class }}</span></td>
+          <td class="num">{{ row.duplicates }}</td>
+          <td class="num">{{ row.replaced }}</td>
+          <td class="num">{{ row.lapsed }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

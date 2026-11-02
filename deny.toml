@@ -1,0 +1,40 @@
+# Supply-chain checks, run by the CI job `deny` (`cargo deny check`, cargo-deny 0.20): security
+# advisories and unmaintained crates (RustSec), licenses, banned or duplicated crates, and where
+# crates come from.
+
+[graph]
+all-features = true
+
+[advisories]
+# Every advisory fails the check, unmaintained crates included, except these, each with the
+# reason it is accepted. Review the list when the dependencies change.
+ignore = [
+    # basic-toml is unmaintained (no patched version): askama 0.16 reads template files
+    # (`#[template(path = ...)]`, hench-web's templates) only with its `config` feature, which
+    # uses it. It runs at compile time, inside the derive, on askama's own configuration. Drop
+    # this once askama moves off it (or the templates become inline sources).
+    { id = "RUSTSEC-2026-0374", reason = "compile-time only, required by askama's file templates" },
+]
+
+[licenses]
+# Permissive licenses only (hench is MIT).
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

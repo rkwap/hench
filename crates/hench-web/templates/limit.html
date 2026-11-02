@@ -1,0 +1,107 @@
+{% extends "layout.html" %}
+
+{% block head %}<link rel="stylesheet" href="{{ layout.assets.limits_css }}">{% endblock %}
+
+{% block content %}
+<section class="panel" aria-labelledby="limit-heading">
+  <header class="panel-head">
+    <h1 id="limit-heading" class="mono">{{ heading }} <span class="chip limit-kind limit-kind-{{ kind }}">{{ kind }}</span></h1>
+    <a class="btn btn-ghost" href="{{ back_href }}">{{ t.back }}</a>
+  </header>
+  <div class="table-wrap">
+    <table class="kv">
+      <tbody>
+        <tr>
+          <th scope="row">{{ t.usage }}</th>
+          <td>
+            <span class="usage">
+              {% if let Some(fill) = usage.fill %}<span class="usage-bar" aria-hidden="true"><span class="usage-fill fill-{{ fill }} usage-{{ usage.level }}"></span></span>{% endif %}
+              <span class="usage-text">{{ usage.text }}</span>
+            </span>
+          </td>
+        </tr>
+        {% for fact in facts %}
+        <tr><th scope="row">{{ fact.0 }}</th><td>{{ fact.1 }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if let Some(holders) = holders %}
+<section class="panel" aria-labelledby="holders-heading">
+  <header class="panel-head">
+    <h2 id="holders-heading">{{ t.holders }} <span class="count-badge">{{ holders.len() }}</span></h2>
+  </header>
+  <p class="muted panel-note">{{ t.holders_help }}</p>
+  {% if holders.is_empty() %}
+  <p class="empty">{{ t.no_holders }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ t.holders }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ t.token }}</th>
+          <th scope="col">{{ t.lease_ends }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for holder in holders %}
+        <tr>
+          <th scope="row" class="mono">{% if let Some(href) = holder.busy_href %}<a href="{{ href }}">{{ holder.token }}</a>{% else %}{{ holder.token }}{% endif %}</th>
+          <td>
+            <time{% if !holder.lease_ends.iso.is_empty() %} datetime="{{ holder.lease_ends.iso }}"{% endif %} title="{{ holder.lease_ends.utc }}" data-relative>{{ holder.lease_ends.text }}</time>
+            {% if holder.ended %}<span class="chip chip-warn" title="{{ t.ended_help }}">{{ t.ended }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="waiting-heading">
+  <header class="panel-head">
+    <h2 id="waiting-heading">{{ t.waiting_jobs }} <span class="count-badge">{{ waiting.len() }}</span></h2>
+  </header>
+  <p class="muted panel-note">{{ t.waiting_help }}</p>
+  {% if waiting.is_empty() %}
+  <p class="empty">{{ t.no_waiting }}</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data">
+      <caption class="sr-only">{{ t.waiting_jobs }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ s.scheduled }}</th>
+          <th scope="col">{{ s.job }}</th>
+          <th scope="col">{{ s.jid }}</th>
+          <th scope="col" class="num">{{ t.reschedules }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in waiting %}
+        <tr>
+          <td><a href="{{ job.href }}"><time{% if !job.at.iso.is_empty() %} datetime="{{ job.at.iso }}"{% endif %} title="{{ job.at.utc }}" data-relative>{{ job.at.text }}</time></a></td>
+          <td><span class="job-class">{{ job.class }}</span></td>
+          <td><code>{{ job.jid }}</code></td>
+          <td class="num">{{ job.reschedules }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{% if !layout.read_only %}
+<form method="post" action="{{ action_href }}" class="panel entry-actions button-row">
+  <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+  <button type="submit" class="btn btn-danger" name="reset" value="1" data-confirm="{{ t.confirm_reset }}">{{ t.reset }}</button>
+  {% if has_line %}<button type="submit" class="btn" name="clear_line" value="1">{{ t.clear_line }}</button>{% endif %}
+</form>
+{% endif %}
+{% endblock %}

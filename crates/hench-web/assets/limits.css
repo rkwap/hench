@@ -1,0 +1,188 @@
+/* hench dashboard: the Limits pages. Colors come from the tokens of hench.css (light and dark
+   themes). Widths are classes, not inline styles: the content security policy forbids those. */
+
+.limits-summary {
+  display: grid;
+  gap: 6px;
+  padding: 0 20px 12px;
+}
+
+.limits-summary p {
+  margin: 0;
+}
+
+.limits-refused .chip {
+  margin-right: 4px;
+}
+
+.limits-sort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.875rem;
+}
+
+.limits-sort a[aria-current] {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.limits-sort-help {
+  font-size: 0.8rem;
+}
+
+.panel-note {
+  margin: 0;
+  padding: 0 20px 8px;
+  font-size: 0.85rem;
+}
+
+.limit-name {
+  overflow-wrap: anywhere;
+}
+
+.limit-kind {
+  text-transform: lowercase;
+}
+
+.limit-kind-concurrency {
+  background: var(--brand-soft);
+  color: var(--brand-soft-ink);
+}
+
+.limit-kind-window,
+.limit-kind-bucket {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border-color: var(--border);
+}
+
+.limit-kind-leaky,
+.limit-kind-points {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.usage-bar {
+  display: inline-block;
+  position: relative;
+  width: 72px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.usage-ok {
+  background: var(--brand);
+}
+
+.usage-high {
+  background: var(--warn);
+}
+
+.usage-full {
+  background: var(--danger);
+}
+
+.usage-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.fill-0 {
+  width: 0%;
+}
+
+.fill-5 {
+  width: 5%;
+}
+
+.fill-10 {
+  width: 10%;
+}
+
+.fill-15 {
+  width: 15%;
+}
+
+.fill-20 {
+  width: 20%;
+}
+
+.fill-25 {
+  width: 25%;
+}
+
+.fill-30 {
+  width: 30%;
+}
+
+.fill-35 {
+  width: 35%;
+}
+
+.fill-40 {
+  width: 40%;
+}
+
+.fill-45 {
+  width: 45%;
+}
+
+.fill-50 {
+  width: 50%;
+}
+
+.fill-55 {
+  width: 55%;
+}
+
+.fill-60 {
+  width: 60%;
+}
+
+.fill-65 {
+  width: 65%;
+}
+
+.fill-70 {
+  width: 70%;
+}
+
+.fill-75 {
+  width: 75%;
+}
+
+.fill-80 {
+  width: 80%;
+}
+
+.fill-85 {
+  width: 85%;
+}
+
+.fill-90 {
+  width: 90%;
+}
+
+.fill-95 {
+  width: 95%;
+}
+
+.fill-100 {
+  width: 100%;
+}

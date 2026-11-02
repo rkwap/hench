@@ -1,0 +1,7 @@
+<nav class="pager" aria-label="{{ s.pagination }}">
+  {% if let Some(href) = pager.first %}<a class="pager-link" href="{{ href }}">{{ s.first_page }}</a>{% else %}<span class="pager-link" aria-disabled="true">{{ s.first_page }}</span>{% endif %}
+  {% if let Some(href) = pager.previous %}<a class="pager-link" href="{{ href }}" rel="prev">{{ s.previous_page }}</a>{% else %}<span class="pager-link" aria-disabled="true">{{ s.previous_page }}</span>{% endif %}
+  <span class="pager-current" aria-current="page">{{ pager.label }}</span>
+  {% if let Some(href) = pager.next %}<a class="pager-link" href="{{ href }}" rel="next">{{ s.next_page }}</a>{% else %}<span class="pager-link" aria-disabled="true">{{ s.next_page }}</span>{% endif %}
+  {% if let Some(href) = pager.last %}<a class="pager-link" href="{{ href }}">{{ s.last_page }}</a>{% else %}<span class="pager-link" aria-disabled="true">{{ s.last_page }}</span>{% endif %}
+</nav>
