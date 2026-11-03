@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use ::redis::AsyncConnectionConfig;
 use ::redis::aio::{ConnectionManager, ConnectionManagerConfig};
+use ::redis::io::tcp::TcpSettings;
 use ::redis::{ConnectionInfo, IntoConnectionInfo, RedisError, RedisResult};
 
 use crate::error::{Error, Result};
@@ -22,6 +23,10 @@ use sentinel::{SentinelTarget, SentinelUrl};
 pub type RedisConnection = ConnectionManager;
 
 /// How to reach Redis and how patiently.
+///
+/// Every TCP connection a pool opens has `TCP_NODELAY` on, so that the kernel sends each
+/// command at once rather than waiting for the acknowledgement of an earlier one (Nagle's
+/// algorithm), which slows a shared connection down when Redis is not on the same machine.
 ///
 /// Its `Debug` output shows the URL without its password.
 #[derive(Clone, PartialEq, Eq)]
@@ -341,7 +346,8 @@ impl RedisConfig {
         self
     }
 
-    /// Parses and validates the URL.
+    /// Parses and validates the URL. The connection info names the client library `hench`
+    /// and turns `TCP_NODELAY` on.
     pub fn connection_info(&self) -> Result<ConnectionInfo> {
         if sentinel::is_sentinel_url(&self.url) {
             return Err(Error::Config(format!(
@@ -373,7 +379,9 @@ impl RedisConfig {
             .redis_settings()
             .clone()
             .set_lib_name("hench", env!("CARGO_PKG_VERSION"));
-        Ok(info.set_redis_settings(settings))
+        Ok(info
+            .set_redis_settings(settings)
+            .set_tcp_settings(tcp_settings()))
     }
 
     /// The URL with any password replaced by `REDACTED`, safe for logs.
@@ -395,6 +403,15 @@ impl Default for RedisConfig {
     fn default() -> Self {
         Self::new(Self::DEFAULT_URL)
     }
+}
+
+/// The TCP settings of every connection to Redis: `TCP_NODELAY` on, as Redis clients usually
+/// have it (redis-rs leaves it off). Commands are small writes, and a process's processors
+/// share a multiplexed connection: with Nagle's algorithm the kernel would hold a command back
+/// while an earlier one is unacknowledged, which with latency between the process and Redis
+/// adds up to a round trip to many commands.
+fn tcp_settings() -> TcpSettings {
+    TcpSettings::default().set_nodelay(true)
 }
 
 /// The client for the one server `config` names.
@@ -915,6 +932,7 @@ mod tests {
         assert_eq!(info.redis_settings().db(), 2);
         assert_eq!(info.redis_settings().password(), Some("secret"));
         assert_eq!(info.redis_settings().lib_name(), Some("hench"));
+        assert!(info.tcp_settings().nodelay());
 
         let info = RedisConfig::new("redis://user:pw@127.0.0.1")
             .connection_info()
@@ -925,6 +943,25 @@ mod tests {
         );
         assert_eq!(info.redis_settings().username(), Some("user"));
         assert_eq!(info.redis_settings().db(), 0);
+    }
+
+    /// Benchmark review: with 1 ms between a process and Redis, Nagle's algorithm on the
+    /// shared connection made `bin/sidekiqload` run 40% slower. Every client a pool builds
+    /// keeps `TCP_NODELAY` on, including the TLS clients rebuilt for the `danger_` settings.
+    #[test]
+    fn clients_turn_nagle_off() {
+        let client = server_client(&RedisConfig::new("redis://example.com:6380/1")).unwrap();
+        assert!(client.get_connection_info().tcp_settings().nodelay());
+        #[cfg(feature = "tls")]
+        for tls in [
+            TlsConfig::new(),
+            TlsConfig::new().danger_accept_invalid_certs(true),
+            TlsConfig::new().danger_accept_invalid_hostnames(true),
+        ] {
+            let config = RedisConfig::new("rediss://example.com:6380").tls(tls);
+            let client = server_client(&config).unwrap();
+            assert!(client.get_connection_info().tcp_settings().nodelay());
+        }
     }
 
     #[test]

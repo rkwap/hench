@@ -17,10 +17,13 @@
 <header class="app-header">
   <div class="app-header-inner">
     <a class="brand" href="{{ layout.home }}">
-      <svg class="brand-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true" focusable="false">
-        <rect class="brand-mark-bg" width="32" height="32" rx="9"/>
-        <path class="brand-mark-glyph" d="M11 7.5v17M11 16.5c0-3 2.4-4.8 5.4-4.8s5.6 1.8 5.6 4.8v8"/>
-        <circle class="brand-mark-dot" cx="22.6" cy="8.6" r="2.6"/>
+      <svg class="brand-mark" viewBox="0 0 120 120" width="32" height="32" aria-hidden="true" focusable="false">
+        <path class="brand-mark-ink" fill-rule="evenodd" d="M6 120c0-27 21-41 54-41s54 14 54 41zM47 80l13 23 13-23z"/>
+        <path class="brand-mark-ink" d="M57.5 85h5l2 14-4.5 6-4.5-6z"/>
+        <rect class="brand-mark-ink" x="47" y="62" width="26" height="22" rx="6"/>
+        <ellipse class="brand-mark-ink" cx="60" cy="42" rx="25" ry="29"/>
+        <path class="brand-mark-shades" d="M33 37h54v5c0 7-5 11-12 11h-7c-4 0-6-3-8-6-2 3-4 6-8 6h-7c-7 0-12-4-12-11z"/>
+        <path class="brand-mark-earpiece" d="M85 50c4 2 4 6 1 8s-3 6 0 8-3 6 0 8-2 6 0 8"/>
       </svg>
       <span class="brand-name">{{ layout.product }}</span>
       {% if layout.read_only %}<span class="chip chip-muted brand-badge">{{ s.read_only_badge }}</span>{% endif %}

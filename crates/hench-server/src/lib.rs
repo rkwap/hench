@@ -76,6 +76,40 @@ pub use crate::cli::Cli;
 #[doc = include_str!("../README.md")]
 pub struct ReadmeDoctests;
 
+/// The examples of the guide, as doc tests like the README's: `guide` in this crate's directory
+/// links to the repository's `docs/guide`, which the package carries as files too.
+#[cfg(doctest)]
+pub mod guide_doctests {
+    macro_rules! pages {
+        ($($name:ident => $file:literal),* $(,)?) => {
+            $(
+                #[doc = include_str!(concat!("../guide/", $file))]
+                pub struct $name;
+            )*
+        };
+    }
+
+    pages! {
+        GettingStarted => "getting-started.md",
+        Jobs => "jobs.md",
+        Configuration => "configuration.md",
+        Reliability => "reliability.md",
+        Middleware => "middleware.md",
+        Testing => "testing.md",
+        UniqueJobs => "unique-jobs.md",
+        PeriodicJobs => "periodic-jobs.md",
+        Batches => "batches.md",
+        RateLimiting => "rate-limiting.md",
+        IterableJobs => "iterable-jobs.md",
+        Metrics => "metrics.md",
+        CombiningFeatures => "combining-features.md",
+        Dashboard => "dashboard.md",
+        Cli => "cli.md",
+        Deployment => "deployment.md",
+        Sidekiq => "sidekiq.md",
+    }
+}
+
 /// Runs a parsed command line, writing what the command prints to `out` (logs go to
 /// standard error).
 pub async fn run<W: Write>(cli: Cli, out: &mut W) -> anyhow::Result<()> {

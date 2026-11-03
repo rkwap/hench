@@ -305,7 +305,8 @@ impl SentinelTarget {
             .map(|(host, port)| {
                 Ok(ConnectionAddr::Tcp(host.clone(), *port)
                     .into_connection_info()?
-                    .set_redis_settings(sentinel_settings.clone()))
+                    .set_redis_settings(sentinel_settings.clone())
+                    .set_tcp_settings(super::tcp_settings()))
             })
             .collect::<RedisResult<Vec<_>>>()?;
         let mut primary_settings = RedisConnectionInfo::default()
@@ -434,11 +435,7 @@ impl SentinelTarget {
             return Ok(Answer::Unknown);
         };
         let addr = ConnectionAddr::Tcp(host, port);
-        let info = addr
-            .clone()
-            .into_connection_info()?
-            .set_redis_settings(self.primary_settings.clone());
-        let client = Client::open(info)?;
+        let client = Client::open(self.primary_info(addr.clone())?)?;
         let mut conn = client
             .get_multiplexed_async_connection_with_config(&self.settings)
             .await?;
@@ -453,6 +450,14 @@ impl SentinelTarget {
         } else {
             Answer::Stale(addr)
         })
+    }
+
+    /// How to connect to the primary at `addr`.
+    fn primary_info(&self, addr: ConnectionAddr) -> RedisResult<ConnectionInfo> {
+        Ok(addr
+            .into_connection_info()?
+            .set_redis_settings(self.primary_settings.clone())
+            .set_tcp_settings(super::tcp_settings()))
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Primary> {
@@ -543,5 +548,27 @@ mod tests {
         assert!(is_sentinel_url("redis+sentinel://s1/a"));
         assert!(is_sentinel_url("rediss+sentinel://s1/a"));
         assert!(!is_sentinel_url("redis://s1/0"));
+    }
+
+    /// Connections to the sentinels and to the primary keep `TCP_NODELAY` on, as the pool's
+    /// direct connections do.
+    #[test]
+    fn connections_turn_nagle_off() {
+        let url = SentinelUrl::parse("redis+sentinel://app:pw@s1,s2:26381/jobs/2").unwrap();
+        let target = SentinelTarget::new(
+            &url,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            "0.0.0",
+        )
+        .unwrap();
+        assert_eq!(target.sentinels.len(), 2);
+        assert!(target.sentinels.iter().all(|s| s.tcp_settings().nodelay()));
+        let info = target
+            .primary_info(ConnectionAddr::Tcp("10.0.0.5".to_owned(), 6379))
+            .unwrap();
+        assert!(info.tcp_settings().nodelay());
+        assert_eq!(info.redis_settings().db(), 2);
+        assert_eq!(info.redis_settings().password(), Some("pw"));
     }
 }

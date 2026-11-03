@@ -1,7 +1,7 @@
-//! Workers embedded next to an axum server with the wiring of the README's "Or embed them next
-//! to your web application" (Quick start, step 5; also `examples/axum_embedded.rs`): one token
-//! stops the HTTP server and the workers, whichever side stops first. Keep `serve_and_work` in
-//! sync with the README.
+//! Workers embedded next to an axum server with the wiring of the guide's "Or embed them next
+//! to your web application" (`docs/guide/getting-started.md`, step 5; also
+//! `examples/axum_embedded.rs`): one token stops the HTTP server and the workers, whichever side
+//! stops first. Keep `serve_and_work` in sync with the guide.
 
 mod support;
 
@@ -16,7 +16,7 @@ use hench::prelude::*;
 use hench::test_util::TestRedis;
 use support::{WAIT, wait_for};
 
-/// The README's wiring: the server and the workers each cancel `shutdown` when they stop, so
+/// The guide's wiring: the server and the workers each cancel `shutdown` when they stop, so
 /// that a signal (which cancels it) or either side stopping on its own stops both.
 async fn serve_and_work(
     hench: Hench,

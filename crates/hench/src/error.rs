@@ -681,8 +681,11 @@ fn is_machinery(frame: &str) -> bool {
         || frame.contains("src\\error.rs:")
 }
 
-/// `true` for frames of the standard library (its source paths start with `/rustc/`) and of
-/// the panic machinery.
+/// `true` for frames of the standard library and of the panic machinery: by their names, or by
+/// their source paths, which end in the standard library's `library/<crate>/src/` whatever the
+/// toolchain (under `/rustc/<commit>/` for rustup's, under the toolchain's own directory for
+/// Homebrew's and distributions'). Inlined frames have short names (`poll<…>`): only their
+/// paths tell.
 fn is_standard_library(frame: &str) -> bool {
     const PREFIXES: [&str; 10] = [
         "std::",
@@ -696,7 +699,21 @@ fn is_standard_library(frame: &str) -> bool {
         "__rust_",
         "_rust_",
     ];
-    frame.contains("/rustc/") || PREFIXES.iter().any(|prefix| frame.starts_with(prefix))
+    const SOURCES: [&str; 10] = [
+        "/library/core/src/",
+        "/library/alloc/src/",
+        "/library/std/src/",
+        "/library/panic_unwind/src/",
+        "/library/panic_abort/src/",
+        "\\library\\core\\src\\",
+        "\\library\\alloc\\src\\",
+        "\\library\\std\\src\\",
+        "\\library\\panic_unwind\\src\\",
+        "\\library\\panic_abort\\src\\",
+    ];
+    frame.contains("/rustc/")
+        || SOURCES.iter().any(|source| frame.contains(source))
+        || PREFIXES.iter().any(|prefix| frame.starts_with(prefix))
 }
 
 impl<E> From<E> for JobError
@@ -1142,6 +1159,48 @@ mod tests {
         // The name decides, not the file.
         assert!(!is_boundary(
             "my_app::run at ./src/hench_execution_boundary.rs:1:1"
+        ));
+    }
+
+    /// A toolchain other than rustup's keeps the standard library's sources under its own
+    /// directory (Homebrew's, here as on macOS, where inlined frames also have short names):
+    /// its frames are left out all the same.
+    #[test]
+    fn own_frames_know_the_standard_library_of_any_toolchain() {
+        let frames = |names: &[&str]| -> Vec<String> {
+            names.iter().map(|name| (*name).to_owned()).collect()
+        };
+        let homebrew = "/opt/homebrew/Cellar/rust/1.98.0/lib/rustlib/src/rust/library";
+        assert_eq!(
+            own_frames(
+                frames(&[
+                    &format!("force_capture at {homebrew}/std/src/backtrace.rs:296:9"),
+                    "here at ./src/error.rs:1:1",
+                    "parse at ./tests/retry.rs:875:12",
+                    "step at ./tests/retry.rs:879:9",
+                    "{async_fn#0} at ./tests/retry.rs:890:9",
+                    &format!(
+                        "poll<alloc::boxed::Box<dyn Future>> at {homebrew}/core/src/future/future.rs:133:9"
+                    ),
+                    "hench_execution_boundary at ./src/error.rs:555:5",
+                ]),
+                None
+            ),
+            frames(&[
+                "parse at ./tests/retry.rs:875:12",
+                "step at ./tests/retry.rs:879:9",
+                "{async_fn#0} at ./tests/retry.rs:890:9",
+            ])
+        );
+        for frame in [
+            "poll at /usr/src/rustc-1.88.0/library/core/src/future/future.rs:1:1",
+            "call_once at C:\\rust\\lib\\rustlib\\src\\rust\\library\\core\\src\\ops\\function.rs:1:1",
+            "{closure#0} at /rustc/x/library/std/src/panicking.rs:1:1",
+        ] {
+            assert!(is_standard_library(frame), "{frame}");
+        }
+        assert!(!is_standard_library(
+            "my_app::library::load at ./src/library.rs:1:1"
         ));
     }
 

@@ -38,6 +38,39 @@ pub async fn cmd<T: redis_rs::FromRedisValue>(pool: &RedisPool, command: &redis_
     command.query_async(&mut conn).await.expect("redis command")
 }
 
+/// A script that keeps Redis busy, serving no other client, for `ARGV[1]` milliseconds: a
+/// stalled server (a slow fork, a long script). Commands sent meanwhile wait, and run once it
+/// ends. The loop ends on `TIME`, or on the server's CPU time where scripts can read it
+/// (`os.clock`, Redis 7 and Valkey): Valkey keeps a script's `TIME` still, so `TIME` alone would
+/// end it only at the busy threshold (5 s), and every other client would get `BUSY` replies.
+pub const BUSY_LOOP: &str = r"
+local ms = tonumber(ARGV[1])
+local ok, clock = pcall(function() return os.clock end)
+if not ok or type(clock) ~= 'function' then clock = nil end
+local cpu = clock and clock()
+local t = redis.call('TIME')
+local start = tonumber(t[1]) * 1000000 + tonumber(t[2])
+while true do
+  t = redis.call('TIME')
+  if tonumber(t[1]) * 1000000 + tonumber(t[2]) - start >= ms * 1000 then return 1 end
+  if clock and (clock() - cpu) * 1000 >= ms then return 1 end
+end
+";
+
+/// Lets a script run for 30 s before Redis answers other clients `BUSY` (5 s by default), so
+/// that a [`BUSY_LOOP`] slowed down by a loaded machine (its CPU time lags behind the clock)
+/// still holds the commands sent meanwhile, which then run, rather than refusing them.
+pub async fn allow_long_scripts(pool: &RedisPool) {
+    let _: () = cmd(
+        pool,
+        redis_rs::cmd("CONFIG")
+            .arg("SET")
+            .arg("lua-time-limit")
+            .arg(30_000),
+    )
+    .await;
+}
+
 /// Builds a Redis command: `redis_cmd!("LLEN", key)`.
 #[macro_export]
 macro_rules! redis_cmd {

@@ -1,0 +1,4 @@
+# web, /queues, sidekiq, round 4, 2026-11-03T09:59:06Z, load average 0.85
+# env RUBY_YJIT_ENABLE=1 PAGE=/queues COUNT=10000 REDIS_URL=redis://127.0.0.1:16379/0 /home/ubuntu/.rubies/4.0.9/bin/ruby /home/ubuntu/hench/benchmarks/sidekiq/webload.rb
+INFO  2026-11-03T09:59:06.865Z pid=60110 tid=19x2: Sidekiq 8.1.7 connecting to Redis with options {size: 10, pool_name: "internal", url: "redis://127.0.0.1:16379/0"}
+/queues in 7.096687222998298 sec

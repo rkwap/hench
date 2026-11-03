@@ -72,7 +72,7 @@ async fn stats_have_the_dashboard_numbers() {
     ] {
         assert!(redis.contains_key(key), "{key}");
     }
-    assert_eq!(redis["store_name"], "Redis");
+    assert_eq!(redis["store_name"], app.store_name().await);
     let clock = stats["server_utc_time"].as_str().unwrap();
     assert!(clock.ends_with(" UTC") && clock.len() == 12, "{clock}");
     assert!(stats["server_time"].as_str().unwrap().ends_with('Z'));

@@ -1,0 +1,9 @@
+date: 2026-11-03T11:22:20Z
+machine: Intel(R) Xeon(R) Platinum 8488C, 16 cores, 30 GB
+os: Ubuntu 26.04.1 LTS, kernel 7.0.0-1014-aws
+cpu idle states: POLL 0 us, C1 1 us, C1E 2 us, C6 190 us disabled
+ec2: c7i.4xlarge, us-west-2a
+hench: 41785d1, a pre-release commit (since squashed) that turned TCP_NODELAY on; the same Rust code as the release
+rustc: rustc 1.99.1 (58cf8f9c3 2026-10-13)
+redis-server: Redis server v=8.10.3 sha=00000000:1 malloc=jemalloc-5.3.0 bits=64 build=902979a75b129958
+toxiproxy: toxiproxy-server version 2.13.0

@@ -4,7 +4,7 @@
 # do: every test target and example must compile from the package with the default features,
 # with all of them and without the default ones, and the unit tests must pass. Every target of
 # the packaged `hench-web` and `hench-server` must compile too, and `hench-server`'s doc tests
-# (the README's examples, which it includes from its package) must pass.
+# (the examples of the README and of the guide, which it includes from its package) must pass.
 #
 # In the workspace, hench's self dev-dependency turns on `test-util` and the repository's other
 # files are at hand; the published crate has neither. So the tests that start a
@@ -61,7 +61,7 @@ for crate in hench-web hench-server; do
   echo "building $crate's targets from its package"
   (cd "$work/$crate-$version" && cargo check "${patches[@]}" --all-targets --keep-going "$@")
 done
-# The README's examples are doc tests of hench-server, included from the README its package
-# carries (a path out of the package would only fail here).
-echo "running hench-server's doc tests (the README's examples) from its package"
+# The examples of the README and of the guide are doc tests of hench-server, included from the
+# files its package carries (a path out of the package would only fail here).
+echo "running hench-server's doc tests (the README's and the guide's examples) from its package"
 (cd "$work/hench-server-$version" && cargo test "${patches[@]}" --doc "$@")

@@ -1,0 +1,19 @@
+# load, LATENCY=1 THREADS=100, sidekiq, round 4, 2026-11-03T09:51:18Z, load average 0.54
+# env RUBY_YJIT_ENABLE=1 LATENCY=1 THREADS=100 REDIS_URL=redis://127.0.0.1:16379 BENCH_REDIS_PORT=16379 BENCH_PROXY_PORT=16380 /home/ubuntu/.rubies/4.0.9/bin/ruby -r /home/ubuntu/hench/benchmarks/sidekiq/redirect.rb /home/ubuntu/hench/benchmarks/sidekiq/vendor/bundle/ruby/4.0.0/gems/sidekiq-8.1.7/bin/sidekiqload
+ruby 4.0.9 (2026-10-23 revision 3e93b23afc) +YJIT +PRISM [x86_64-linux]
+THREADS: 100, LATENCY: 1, AJ: nil, PROFILE: nil
+WARN  2026-11-03T09:51:18.693Z pid=58616 tid=19h4: Setup RSS: 44024
+WARN  2026-11-03T09:51:20.112Z pid=58616 tid=19h4: Created 500000 jobs in 1.416669804 sec
+WARN  2026-11-03T09:51:20.112Z pid=58616 tid=19h4: Starting load
+WARN  2026-11-03T09:51:20.112Z pid=58616 tid=19h4: Simulating 1ms of latency between Sidekiq and redis
+WARN  2026-11-03T09:51:25.126Z pid=58616 tid=1aoo jid=5b1d10117a5519cb32117629 class=LoadWorker: 2026-11-03 09:51:25 +0000 Done 100000
+WARN  2026-11-03T09:51:30.025Z pid=58616 tid=1ank jid=c18fe54593fc3213858cba1c class=LoadWorker: 2026-11-03 09:51:30 +0000 Done 200000
+WARN  2026-11-03T09:51:34.949Z pid=58616 tid=1amg jid=32cfbce8c3060a57eabfaebe class=LoadWorker: 2026-11-03 09:51:34 +0000 Done 300000
+WARN  2026-11-03T09:51:39.854Z pid=58616 tid=18pc jid=b42dd5399f51ca4f6a2357bd class=LoadWorker: 2026-11-03 09:51:39 +0000 Done 400000
+WARN  2026-11-03T09:51:44.777Z pid=58616 tid=1apc jid=50fe340bf7217a04cd397265 class=LoadWorker: 2026-11-03 09:51:44 +0000 Done 500000
+WARN  2026-11-03T09:51:44.778Z pid=58616 tid=1azc: Done, 500000 jobs in 24.665537768 sec, 20271 jobs/sec
+WARN  2026-11-03T09:51:44.785Z pid=58616 tid=1azc: Ending RSS: 62924
+WARN  2026-11-03T09:51:44.786Z pid=58616 tid=1azc: Now here's the latency for three jobs
+0.0058515071868896484
+0.0017781257629394531
+0.0014388561248779297

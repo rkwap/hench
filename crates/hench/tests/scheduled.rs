@@ -871,20 +871,17 @@ async fn a_lost_reply_never_loses_a_due_job() {
     );
 }
 
-/// Keeps Redis busy for `ARGV[1]` seconds after adding two due jobs to each set.
-const STALL: &str = r"
-redis.call('ZADD', KEYS[1], ARGV[2], ARGV[4])
-redis.call('ZADD', KEYS[1], ARGV[3], ARGV[5])
-redis.call('ZADD', KEYS[2], ARGV[2], ARGV[6])
-redis.call('ZADD', KEYS[2], ARGV[3], ARGV[7])
-local t0 = redis.call('TIME')
-local start = tonumber(t0[1]) + tonumber(t0[2]) / 1000000
-while true do
-  local t = redis.call('TIME')
-  if tonumber(t[1]) + tonumber(t[2]) / 1000000 - start > tonumber(ARGV[1]) then break end
-end
-return 1
-";
+/// Adds two due jobs to each set, then keeps Redis busy for `ARGV[1]` milliseconds
+/// ([`BUSY_LOOP`]): one script, so that no scheduler sees the jobs before the stall.
+fn stall_script() -> String {
+    format!(
+        "redis.call('ZADD', KEYS[1], ARGV[2], ARGV[4])\n\
+         redis.call('ZADD', KEYS[1], ARGV[3], ARGV[5])\n\
+         redis.call('ZADD', KEYS[2], ARGV[2], ARGV[6])\n\
+         redis.call('ZADD', KEYS[2], ARGV[3], ARGV[7])\n\
+         {BUSY_LOOP}"
+    )
+}
 
 /// Redis stalls longer than the process's response timeout while the scheduler takes a due
 /// job: the command times out on the client but runs once Redis resumes. No job is lost and
@@ -894,6 +891,7 @@ async fn a_reply_lost_to_a_response_timeout_never_loses_a_due_job() {
     init_logging();
     let redis = TestRedis::start().await;
     let pool = redis.pool().await;
+    allow_long_scripts(&pool).await;
     let process_pool = RedisPool::from_config(
         hench::RedisConfig::new(redis.url()).response_timeout(Duration::from_millis(500)),
     )
@@ -909,11 +907,11 @@ async fn a_reply_lost_to_a_response_timeout_never_loses_a_due_job() {
     };
     let mut stall = hench::redis_rs::cmd("EVAL");
     stall
-        .arg(STALL)
+        .arg(stall_script())
         .arg(2)
         .arg(keys::RETRY)
         .arg(keys::SCHEDULE)
-        .arg(3)
+        .arg(3_000)
         .arg(now - 60.0)
         .arg(now - 50.0)
         .arg(job("JOB-retry-first"))

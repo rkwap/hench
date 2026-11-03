@@ -1,0 +1,4 @@
+# web, /busy, hench, round 5, 2026-11-03T08:46:57Z, load average 0.60
+# env PAGE=/busy COUNT=10000 REDIS_URL=redis://127.0.0.1:16379/0 /home/ubuntu/hench/target/release/webload
+hench 0.1.0 (release build, x86_64-linux)
+/busy in 31.180870386 sec

@@ -28,7 +28,7 @@ async fn dashboard_shows_totals_history_and_redis() {
     assert_eq!(res.texts("[data-total=processed]"), ["5"]);
     assert_eq!(res.texts("[data-total=failed]"), ["2"]);
     assert_eq!(res.texts("[data-total=retries]"), ["1"]);
-    assert_eq!(res.texts("#redis-heading"), ["Redis"]);
+    assert_eq!(res.texts("#redis-heading"), [app.store_name().await]);
     assert_eq!(res.count("#redis-version"), 1);
     assert!(!res.texts("#redis-version")[0].is_empty());
     for id in [

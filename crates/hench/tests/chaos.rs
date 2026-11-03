@@ -455,18 +455,6 @@ impl Job for Counted {
     }
 }
 
-/// Keeps Redis busy (serving no other client) for `ARGV[1]` milliseconds.
-const BUSY_LOOP: &str = r"
-local t = redis.call('TIME')
-local start = tonumber(t[1]) * 1000000 + tonumber(t[2])
-while true do
-  t = redis.call('TIME')
-  if tonumber(t[1]) * 1000000 + tonumber(t[2]) - start >= tonumber(ARGV[1]) * 1000 then
-    return 1
-  end
-end
-";
-
 /// Redis stalls longer than the response timeout while processors fetch from a backlog: the
 /// fetch scripts sent meanwhile time out on the client but still move a job each into the
 /// process's in-progress list once Redis resumes. Those jobs are pushed back while the process
@@ -477,6 +465,7 @@ async fn jobs_stranded_by_lost_fetch_replies_run_while_the_process_lives() {
     init_logging();
     let redis = TestRedis::start().await;
     let pool = redis.pool().await;
+    allow_long_scripts(&pool).await;
     let engine_pool =
         RedisPool::from_config(redis.config().response_timeout(Duration::from_millis(300)))
             .await

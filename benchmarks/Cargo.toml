@@ -1,0 +1,25 @@
+[package]
+name = "hench-benchmarks"
+description = "Hench ports of Sidekiq's benchmark scripts (bin/sidekiqload, bin/multi_queue_bench and bin/webload); see README.md."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+hench.workspace = true
+hench-web.workspace = true
+# `io-util`: the toxiproxy client.
+tokio = { workspace = true, features = ["io-util"] }
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# webload: requests to the dashboard's router in process, as Sidekiq's script does through
+# Rack::Test.
+axum.workspace = true
+tower.workspace = true
+http.workspace = true
+http-body-util.workspace = true

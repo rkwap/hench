@@ -23,11 +23,12 @@ These are settings of the GitHub repository, which no commit can make:
    `#[hench::job]` uses `hench::__private`, so a `hench` release works with its own
    `hench-macros` only), `hench` and `hench-web` with the version whose API `hench-web` and
    `hench-server` use.
-2. Replace `v<previous>` by `v<new>` in the links to the repository from `README.md` and the
-   rustdoc (`grep -rn -E '(blob|tree)/v[0-9]' README.md crates`): they point at the tagged
-   sources, so that the README and the documentation of a version keep linking to the files of
-   that version (crates.io resolves a README's relative links against each crate's directory,
-   and docs.rs not at all, so the links are absolute).
+2. Replace `v<previous>` by `v<new>` in the links to the repository from `README.md` (its
+   images included) and the rustdoc (`grep -rn -E '(blob|tree|raw)/v[0-9]' README.md crates`):
+   they point at the tagged sources, so that the README and the documentation of a version keep
+   linking to the files of that version (crates.io resolves a README's relative links against
+   each crate's directory, and docs.rs not at all, so the links are absolute). The guide and
+   the other documents of the repository link relatively.
 3. Pass the gate: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
    --all-features -- -D warnings`, `cargo test --workspace --all-features`, `RUSTDOCFLAGS="-D
    warnings" cargo doc --workspace --no-deps --all-features`, `cargo +1.88 check --workspace

@@ -1,7 +1,7 @@
 //! The four features in one program that checks itself: a unique job, a batch with a
 //! callback, a throttled job and a periodic schedule, run by one worker against a private
 //! `redis-server` (`hench::test_util::TestRedis`, so `redis-server` must be on the `PATH`). It
-//! exits with an error unless every feature did what the README says; CI runs it.
+//! exits with an error unless every feature did what the guide says; CI runs it.
 //!
 //! ```sh
 //! cargo run -p hench --example features --features test-util

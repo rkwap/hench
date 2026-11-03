@@ -12,8 +12,8 @@ its library, which exists for that binary.
 
 ## [Unreleased]
 
-Nothing yet. Planned for 0.2 (the README's [Roadmap](README.md#roadmap) says what each item
-brings and what to do until then):
+Nothing yet. Planned for 0.2 (the [roadmap](docs/ROADMAP.md) says what each item brings and
+what to do until then):
 
 - **Queue limits**: a concurrency or rate limit on a whole queue, checked when workers fetch
   from it.
@@ -24,7 +24,7 @@ brings and what to do until then):
 - **Batch tags**, searchable on Redis 7.4 or newer.
 - **A lean lock mode for unique jobs**, if users ask for it.
 
-## [0.1.0] - 2026-11-02
+## [0.1.0] - 2026-11-03
 
 The first release: background jobs for tokio applications, with the architecture, Redis data
 model and semantics of Sidekiq 8.1, the Pro and Enterprise features unique jobs, periodic jobs,
@@ -112,6 +112,13 @@ batches and rate limiting, and a dashboard.
     of `GET /api/v1/processes` lists the names of its queues and its capsules by name;
   - `stats`, `processes`, `queues`, `quiet`, `stop`, `enqueue`, `periodic`, `batches`,
     `limits` and `locks` subcommands, with `--json` output for the reports.
+- **Documentation and benchmarks.** The README introduces Hench; the guide (`docs/guide`)
+  covers each topic on a page of its own, with examples the test suite compiles; `benchmarks/`
+  ports Sidekiq's three benchmark scripts (`bin/sidekiqload`, `bin/multi_queue_bench`,
+  `bin/webload`) and records Hench and Sidekiq 8.1.7 running them on the same machine. Redis
+  connections turn `TCP_NODELAY` on (redis-rs leaves it off), so that commands on the
+  connection a process's processors share are not held back by Nagle's algorithm when Redis is
+  on another machine.
 
 ### Known limitations
 
@@ -131,7 +138,8 @@ batches and rate limiting, and a dashboard.
   periodic add` do); a queue named `.` or `..` cannot be opened from it.
 - TLS through Sentinel (`rediss+sentinel://`) is refused, and the `hench` command has no
   options for a private certificate authority or a client certificate.
-- Redis-compatible servers (Valkey, Dragonfly) should work but are not tested.
+- Of the Redis-compatible servers, Valkey 9 passes the test suite (run by hand, not in CI);
+  Dragonfly should work but is not tested.
 
 ### Requirements
 

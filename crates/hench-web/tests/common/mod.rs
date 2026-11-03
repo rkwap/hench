@@ -110,6 +110,19 @@ impl App {
         let mut conn = self.pool.conn().await.expect("redis connection");
         command.query_async(&mut conn).await.expect("redis command")
     }
+
+    /// The product the test's server is, which the dashboard names: Redis, or a
+    /// Redis-compatible server that announces itself with its own version field in `INFO`.
+    pub async fn store_name(&self) -> &'static str {
+        let info: String = self.redis(redis_rs::cmd("INFO").arg("server")).await;
+        if info.contains("dragonfly_version:") {
+            "Dragonfly"
+        } else if info.contains("valkey_version:") {
+            "Valkey"
+        } else {
+            "Redis"
+        }
+    }
 }
 
 /// A form POST with `cookie_token` in the cookie and `field_token` in the form.

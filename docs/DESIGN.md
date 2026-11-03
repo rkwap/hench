@@ -55,10 +55,15 @@ dev-dependency enables it; from the published crate, `cargo test --features test
 checks of the repository itself (`tests/spec_parity.rs`, which reads the macro crate's sources,
 and `tests/readme.rs`) are left out of the package, and `ci/check-package.sh` builds every
 target of the packaged `hench`, `hench-web` and `hench-server` from their `.crate` files and
-runs the README's doc tests from the packaged `hench-server` (CI's `package` job).
-`crates/hench-server/README.md` is a symbolic link to the repository's README, which the
-package carries as a file, so `ReadmeDoctests` includes `../README.md` in the repository and in
-the package alike. `CHANGELOG.md` (Keep a Changelog) lists each release's changes, the known
+runs the doc tests of the README and of the guide from the packaged `hench-server` (CI's
+`package` job). `crates/hench-server/README.md` is a symbolic link to the repository's README,
+and `crates/hench-server/guide` one to `docs/guide`, which the package carries as files, so
+`ReadmeDoctests` and `guide_doctests` include them in the repository and in the package alike.
+The README is an overview (crates.io shows it, so its links are absolute and pinned to the
+release's tag); the guide (`docs/guide`, a page per topic) holds the details, and
+`tests/readme.rs` checks that every page with an example is a doc test and that the documents'
+links resolve. `benchmarks/` (a crate of the workspace that is never published) ports Sidekiq's
+benchmark scripts and records Hench and Sidekiq running them on one machine. `CHANGELOG.md` (Keep a Changelog) lists each release's changes, the known
 limitations of the release and what the next one plans; `docs/RELEASING.md` the release
 steps.
 
@@ -310,8 +315,11 @@ pub trait Job: Send + Sync + 'static {
   end where hench called the code that failed, the job's `perform` or a server middleware:
   hench polls each through `error::hench_execution_boundary`, a function that is never inlined
   (and does not end in a tail call), whose frame marks the cut in optimized builds too; the
-  standard library's frames just above it go as well. Hench's middleware chain, its panic
-  catching, the processor and tokio below the cut made up about 95% of a stored backtrace.
+  standard library's frames just above it go as well (known by their names, or by their
+  sources' `library/<crate>/src/` paths whatever the toolchain: rustup's `/rustc/<commit>/`,
+  Homebrew's or a distribution's; inlined frames have short names). Hench's middleware chain,
+  its panic catching, the processor and tokio below the cut made up about 95% of a stored
+  backtrace.
   Other errors carry anyhow's backtrace when `RUST_BACKTRACE`/`RUST_LIB_BACKTRACE` is set.
   Constructors: `msg` (class `hench::JobError`), `new(class, msg)`, `panic(payload)`,
   `unknown_job`, `invalid_args`, `from_boxed`, `with_anyhow`; class constants
@@ -550,7 +558,9 @@ Spine details:
   `block + max(response_timeout, 1 s)`; `reconnect()`; `with_retry(..)`; `ping()`;
   `RedisPool::detached()` backs fake/inline clients (every connection request fails).
   `RedisConfig` defaults: connection and response timeouts 3 s (Sidekiq's), 6 reconnection
-  attempts with 100 ms–2 s exponential backoff. `from_config` (and so `build`) logs the URL
+  attempts with 100 ms–2 s exponential backoff. Every TCP connection (to a server, a sentinel
+  or the primary a sentinel names) has `TCP_NODELAY` on: redis-rs leaves it off, and Nagle's
+  algorithm on a shared multiplexed connection holds commands back by up to a round trip. `from_config` (and so `build`) logs the URL
   (redacted) and where it came from (`REDIS_URL`, the variable `REDIS_PROVIDER` names, or the
   default) at info level, like Sidekiq, then connects with attempts of its own: retried while
   Redis is unreachable or not ready (`LOADING`, ...), but failing at once on errors no retry
@@ -1678,9 +1688,9 @@ integration: `middleware::execute_job` (processor and testing modes), `api::clea
 fetchers read), `JobError::KILLED`, and `tests/api_engine.rs`, which drives the API against a
 running engine. The features and web lanes are merged as well; their glue is the integration
 row above (the dashboard reads `hench::metrics` and `hench::iterable::IterationState`, the
-`hench` command the metrics query). The README's examples are doc tests of `hench-server`
-(`ReadmeDoctests`, included from the README its package carries, §1), the crate that depends on
-everything they use.
+`hench` command the metrics query). The examples of the README and of the guide are doc tests
+of `hench-server` (`ReadmeDoctests` and `guide_doctests`, included from the files its package
+carries, §1), the crate that depends on everything they use.
 
 Crate-internal helpers for the lanes: `flush::{Flusher, Batch}` (counter flushes, §5, used by
 the engine's `stats` and the metrics tracker), `job::catch_panic(fut)`, `Client::normalize`,
@@ -2858,7 +2868,7 @@ Port the relevant Sidekiq test files scenario-by-scenario (behaviour, not code):
 | manager_test, launcher_test, capsule_test, actors_test | `tests/launcher.rs` |
 | api_test, api_utils_test, dead_set_test, filtering_test, paginator_test | `tests/api.rs` |
 | (cross-lane) the API against running workers | `tests/api_engine.rs` |
-| (README) the embedding wiring of the Quick start; its examples against the dependencies it lists | `tests/embedding.rs`; `ci/check-readme-examples.sh` (CI job `readme`) |
+| (README and guide) the embedding wiring of Getting started; the examples of each against the dependencies it lists; the guide's pages as doc tests, and the documents' links | `tests/embedding.rs`; `ci/check-readme-examples.sh` (CI job `readme`); `tests/readme.rs` |
 | (supply chain) RustSec advisories, licenses, bans and sources of the dependency graph | `deny.toml` (CI job `deny`, cargo-deny) |
 | middleware_test | `tests/middleware.rs` |
 | testing_test, testing_fake_test, testing_inline_test | `tests/testing.rs` (+ `tests/testing_spans.rs`: a binary of its own, since `tracing` caches callsite interest process-wide) |

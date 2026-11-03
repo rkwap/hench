@@ -280,20 +280,19 @@ pre,
   text-decoration: none;
 }
 
-.brand-mark-bg {
-  fill: var(--brand);
+.brand-mark-ink {
+  fill: var(--text);
 }
 
-.brand-mark-glyph {
+.brand-mark-shades {
+  fill: #f5b301;
+}
+
+.brand-mark-earpiece {
   fill: none;
-  stroke: var(--brand-ink);
-  stroke-width: 3.2;
+  stroke: #f5b301;
+  stroke-width: 2.8;
   stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.brand-mark-dot {
-  fill: #fbbf24;
 }
 
 .brand-badge {

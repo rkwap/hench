@@ -1153,23 +1153,11 @@ async fn a_poller_that_dies_between_lease_and_fire_leaves_its_tick_to_another_af
     assert_eq!(schedule(&pool, "m").await["fired"], "1");
 }
 
-/// Keeps Redis busy (serving no other client) for `ARGV[1]` milliseconds.
-const BUSY_LOOP: &str = r"
-local t = redis.call('TIME')
-local start = tonumber(t[1]) * 1000000 + tonumber(t[2])
-while true do
-  t = redis.call('TIME')
-  if tonumber(t[1]) * 1000000 + tonumber(t[2]) - start >= tonumber(ARGV[1]) * 1000 then
-    return 1
-  end
-end
-";
-
-/// Client middleware that stalls Redis once, right before the tick's `FIRE` is sent, so that the
-/// `FIRE` times out on the client but runs once Redis resumes.
+/// Client middleware that stalls Redis once it is armed, right before the tick's `FIRE` is
+/// sent, so that the `FIRE` times out on the client but runs once Redis resumes.
 struct Staller {
     redis: RedisPool,
-    armed: AtomicBool,
+    armed: Arc<AtomicBool>,
 }
 
 #[async_trait]
@@ -1198,10 +1186,14 @@ impl ClientMiddleware for Staller {
     }
 }
 
+/// A `FIRE` whose reply is lost (Redis stalls past the poller's response timeout, then runs it)
+/// enqueues its tick once: neither the poller's next attempts nor the score it restores after
+/// the timeout enqueue it again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_fire_whose_reply_is_lost_enqueues_once() {
     let redis = TestRedis::start().await;
     let pool = redis.pool().await;
+    allow_long_scripts(&pool).await;
     let clock = ManualClock::new(at(T0));
     let api = Api::new(pool.clone()).periodic().with_clock(clock.clone());
     api.upsert(
@@ -1219,9 +1211,10 @@ async fn a_fire_whose_reply_is_lost_enqueues_once() {
         RedisPool::from_config(redis.config().response_timeout(Duration::from_secs(10)))
             .await
             .unwrap();
+    let armed = Arc::new(AtomicBool::new(false));
     let staller = Staller {
         redis: stall_pool,
-        armed: AtomicBool::new(true),
+        armed: armed.clone(),
     };
     let worker = poller(&redis, |builder| {
         builder
@@ -1230,19 +1223,27 @@ async fn a_fire_whose_reply_is_lost_enqueues_once() {
             .client_middleware(staller)
     })
     .await;
+    // A first tick, fired as usual, loads `FIRE`'s script: a stalled `FIRE` that Redis then
+    // refused for want of it would run nothing, and prove nothing.
     clock.set(at(T0 + 30));
-    wait_for("fired", WAIT, || async {
+    wait_for("the first tick", WAIT, || async {
         queue_size(&pool, "out").await >= 1
     })
     .await;
-    clock.set(at(T0 + 40));
+    armed.store(true, Ordering::SeqCst);
+    clock.set(at(T0 + 90));
+    wait_for("the stalled tick", WAIT, || async {
+        queue_size(&pool, "out").await >= 2
+    })
+    .await;
+    clock.set(at(T0 + 100));
     tokio::time::sleep(Duration::from_secs(3)).await;
     worker.launcher.stop().await.unwrap();
-    assert_eq!(queue_size(&pool, "out").await, 1);
+    assert_eq!(queue_size(&pool, "out").await, 2);
     let fields = schedule(&pool, "m").await;
     assert_eq!(
         (fields["fired"].as_str(), fields["next"].as_str()),
-        ("1", "1793613720")
+        ("2", "1793613780")
     );
 }
 

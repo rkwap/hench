@@ -1,0 +1,14 @@
+# The Sidekiq side of the benchmarks (benchmarks/run.sh): Sidekiq's own benchmark scripts,
+# bin/sidekiqload, bin/multi_queue_bench and bin/webload, ship in the gem, and load the gems of
+# this file's default and load_test groups. Gemfile.lock pins the versions measured.
+source "https://rubygems.org"
+
+gem "sidekiq", "8.1.7"
+# bin/webload
+gem "rack-test"
+gem "vernier"
+
+group :load_test do
+  # bin/sidekiqload with LATENCY > 0
+  gem "toxiproxy"
+end

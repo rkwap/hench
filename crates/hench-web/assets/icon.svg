@@ -1,5 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <rect width="32" height="32" rx="9" fill="#0f766e"/>
-  <path d="M11 7.5v17M11 16.5c0-3 2.4-4.8 5.4-4.8s5.6 1.8 5.6 4.8v8" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="22.6" cy="8.6" r="2.6" fill="#fbbf24"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <style>.ink{fill:#16181d}@media (prefers-color-scheme:dark){.ink{fill:#f2f4f7}}</style>
+  <path class="ink" fill-rule="evenodd" d="M6 120c0-27 21-41 54-41s54 14 54 41zM47 80l13 23 13-23z"/>
+  <path class="ink" d="M57.5 85h5l2 14-4.5 6-4.5-6z"/>
+  <rect class="ink" x="47" y="62" width="26" height="22" rx="6"/>
+  <ellipse class="ink" cx="60" cy="42" rx="25" ry="29"/>
+  <path fill="#f5b301" d="M33 37h54v5c0 7-5 11-12 11h-7c-4 0-6-3-8-6-2 3-4 6-8 6h-7c-7 0-12-4-12-11z"/>
+  <path d="M38 40h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".9"/>
+  <path d="M85 50c4 2 4 6 1 8s-3 6 0 8-3 6 0 8-2 6 0 8" fill="none" stroke="#f5b301" stroke-width="2.8" stroke-linecap="round"/>
 </svg>

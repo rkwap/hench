@@ -638,17 +638,21 @@ async fn stored_backtraces_show_where_jobs_failed() {
         .into_owned();
     for (job, _) in sorted_jobs(&pool, keys::RETRY).await {
         let lines = hench::decompress_backtrace(job.error_backtrace.as_deref().unwrap()).unwrap();
+        // Frames are known by their locations: their names depend on the platform's
+        // symbolization (`<retry::FailsHere as hench::job::Job>::perform::{closure#0}`, or a
+        // bare `{async_fn#0}` for a frame inlined on macOS).
         if job.class == "PanicsHere" {
             assert_eq!(job.error_class.as_deref(), Some(JobError::PANIC));
             let location = format!("panicked at {}:{PANIC_LINE}:", file!());
             assert!(lines[0].starts_with(&location), "{lines:?}");
+            // The job's own frame, at the panicking line.
+            let site = format!("{file}:{PANIC_LINE}:");
             assert!(
-                lines.iter().any(|line| line.contains("PanicsHere")),
+                lines[1..].iter().any(|line| line.contains(&site)),
                 "{lines:?}"
             );
         } else {
             // From the job's own frame, at the failing line.
-            assert!(lines[0].contains("FailsHere"), "{lines:?}");
             let site = format!("{file}:{ERROR_LINE}:");
             assert!(lines[0].contains(&site), "{lines:?}");
         }
@@ -866,6 +870,10 @@ async fn orphan_recovery_trims_the_morgue_by_age() {
     launcher.stop().await.unwrap();
 }
 
+/// Lines of `FailsDeep`'s frames, innermost first: the failing `?` in `parse`, the call of
+/// `parse` in `step`, the call of `step` in `perform`.
+const DEEP_LINES: [u32; 3] = [line!() + 8, line!() + 12, line!() + 23];
+
 /// Fails two calls deep; keeps its backtrace.
 #[derive(Default)]
 struct FailsDeep;
@@ -910,10 +918,11 @@ async fn stored_backtraces_end_with_the_job_and_can_be_cleaned() {
             .register(FailsDeep)
             .error_handler(errors.handler());
         builder = match cleaner {
+            // Keeps the application's frames, by their file, as backtrace cleaners do.
             "cleans" => builder.backtrace_cleaner(|lines| {
                 lines
                     .into_iter()
-                    .filter(|line| line.contains("FailsDeep"))
+                    .filter(|line| line.contains("retry.rs:"))
                     .map(|line| format!("app: {line}"))
                     .collect()
             }),
@@ -931,9 +940,14 @@ async fn stored_backtraces_end_with_the_job_and_can_be_cleaned() {
         let (job, _) = sorted_jobs(&pool, keys::RETRY).await.remove(0);
         del(&pool, keys::RETRY).await;
         let lines = hench::decompress_backtrace(job.error_backtrace.as_deref().unwrap()).unwrap();
-        // The job's three frames (`parse`, `step`, `perform`), and nothing below them.
-        assert!(lines[0].contains("FailsDeep"), "{cleaner}: {lines:?}");
+        // The job's three frames (`parse`, `step`, `perform`), at their lines, and nothing below
+        // them. Frames are known by their locations: their names depend on the platform's
+        // symbolization.
         assert_eq!(lines.len(), 3, "{cleaner}: {lines:?}");
+        for (line, number) in lines.iter().zip(DEEP_LINES) {
+            let site = format!("retry.rs:{number}:");
+            assert!(line.contains(&site), "{cleaner}, {site}: {lines:?}");
+        }
         for machinery in [
             "src/middleware.rs",
             "src/processor.rs",

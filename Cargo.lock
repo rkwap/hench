@@ -953,6 +953,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hench-benchmarks"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hench",
+ "hench-web",
+ "http",
+ "http-body-util",
+ "serde_json",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "hench-macros"
 version = "0.1.0"
 dependencies = [

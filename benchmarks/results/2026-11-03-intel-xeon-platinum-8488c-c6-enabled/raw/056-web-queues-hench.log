@@ -1,0 +1,4 @@
+# web, /queues, hench, round 3, 2026-11-03T08:44:41Z, load average 0.59
+# env PAGE=/queues COUNT=10000 REDIS_URL=redis://127.0.0.1:16379/0 /home/ubuntu/hench/target/release/webload
+hench 0.1.0 (release build, x86_64-linux)
+/queues in 24.64427835 sec

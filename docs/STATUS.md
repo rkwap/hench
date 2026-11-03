@@ -3,11 +3,12 @@
 Tracks progress against `docs/DESIGN.md`. Update in the same commit as the work.
 Legend: `[ ]` todo · `[~]` in progress / partial · `[x]` done and tested.
 
-**Release state: 0.1.0 (2026-11-02), ready to publish.** The four crates are at 0.1.0 on
-`implement-hench`, with `CHANGELOG.md` (its 0.1.0 entry: features, known limitations,
-requirements) and the README's roadmap; every gate passes (review log, release review round
-4). Not published, not tagged: the owner makes the repository public, brings `main` up to the
-release commit, pushes the tag `v0.1.0` and publishes the crates in order (`docs/RELEASING.md`).
+**Release state: 0.1.0 (2026-11-03), released from `main`.** The four crates are at 0.1.0,
+with `CHANGELOG.md` (its 0.1.0 entry: features, known limitations, requirements) and the
+roadmap (`docs/ROADMAP.md`); every gate passes (review log, release review round 4, and the
+release gate on `main`, with two timing-sensitive tests that failed once under load, see
+Remaining gaps). The owner makes the repository public, pushes the tag `v0.1.0` and
+publishes the crates in order (`docs/RELEASING.md`).
 Phase 3 of the pro features (below) is deferred to 0.2 by the owner's decision and is not
 started.
 
@@ -281,41 +282,93 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
 - [ ] the unique `lean` lock mode, if asked (`docs/design/unique.md` U7)
 
 ## Quality
-- [~] CI (fmt, clippy -D warnings, tests with redis-server, MSRV, docs, README examples against the dependencies the README lists, the macro's typeck diagnostics on the recorded rustc, cargo-deny; a read-only token, actions pinned by commit SHA and kept current by Dependabot; the soak harness nightly and by hand): `.github/workflows/ci.yml` and `soak.yml` define every step; not yet seen running on GitHub (nothing pushed). Locally: fmt, clippy, the suite, rustdoc `-D warnings`, `cargo +1.88 check --all-targets`, `ci/check-readme-examples.sh`, `cargo deny --all-features check`, `ci/check-package.sh` (CI's `package` job, with `-D warnings`), `cargo publish --dry-run --workspace`, the docs.rs-style nightly build (`--cfg docsrs`, `-D warnings`) and `ci/soak.sh --short` pass
+- [~] CI: `.github/workflows/ci.yml` (fmt, clippy `-D warnings`, rustdoc `-D warnings`, `cargo check` on Rust 1.88) and `coverage.yml` (the whole suite, every feature, with redis-server, under `cargo llvm-cov`, uploaded to Codecov with an OIDC login, no stored token; it serves the README's coverage badge). Both run on every push to `main` and every pull request while the repository is public, where Actions minutes are free and unlimited (on a private repository the jobs skip themselves, so they use none of the account's minutes), and by hand (`workflow_dispatch`). Actions pinned by commit SHA. Not yet seen running on GitHub. Locally: fmt, clippy, the suite, rustdoc `-D warnings`, `cargo +1.88 check --all-targets`, `ci/check-readme-examples.sh`, `cargo deny --all-features check`, `ci/check-package.sh` (CI's `package` job, with `-D warnings`), `cargo publish --dry-run --workspace`, the docs.rs-style nightly build (`--cfg docsrs`, `-D warnings`) and `ci/soak.sh --short` pass
 - [~] Ported Sidekiq test scenarios (see DESIGN §10): client, job_util, job (`set`, `perform_in`, `perform_bulk`, `perform_inline`, macro jobs), middleware, sharding, fetch, processor, job_logger, exception_handler, retry, retry_exhausted, scheduled, scheduling, manager, launcher, capsule (except "customized middleware chains": chains are per process, DESIGN §5), actors, testing, testing_fake, testing_inline, api, api_utils, dead_set, filtering, paginator, metrics, deploy, iterable (+ iterable_job_query), cli, systemd, web (including its Metrics and iteration scenarios), web_helpers, web_router, web_action_flash, webext, sidekiqmon done (`web_test`'s "displays custom job info" included); not ported: `web_test`'s locale scenarios (see the gaps)
 - [x] Chaos / end-to-end / property tests: payload/args/backtrace, retry-delay-bound and weighted-order proptests; Redis restart/outage/read-only replica tests; e2e (5 000 jobs × both fetch strategies, several processes, retries); chaos (crashed process recovery, crash mid-stream, Redis restart and outage mid-run, shutdown with Redis down, network partition, out of memory); cross-lane (the API against live workers, macro jobs on real workers); the multi-process soak and chaos harness (`examples/soak`, `ci/soak.sh`, DESIGN §10)
-- [x] README, examples, rustdoc: top-level `README.md` (why, features, quick start, jobs,
-  enqueuing, configuration reference for the builder, the command line and the TOML file,
-  queues and weights, retries and the dead set, delivery guarantees, middleware, testing,
-  metrics, iterable jobs, the dashboard, the `hench` command, deployment, differences from
-  Sidekiq, license and credits; unique jobs, periodic jobs, batches and workflows, rate
-  limiting, and the features together); its 22 Rust examples are doc tests of `hench-server`
-  (`ReadmeDoctests`: all compile, the five that need no Redis run); `hench`, `hench-web` and
-  `hench-server` package it as their readme, and its links into the repository, like the
-  rustdoc's links to the design documents, are pinned to the release tag. Examples
-  `axum_embedded`, `worker` (on `hench::cli`) and `hench-web`'s `embedded` run against a real
-  Redis; rustdoc complete (`-D warnings`)
+- [x] Portability: the whole suite passes on macOS against Valkey 9.0.1 (which Homebrew installs
+  as `redis-server`) with Homebrew's Rust. Fixed for it: the lost-reply tests (`chaos`,
+  `periodic`, `scheduled`) stalled Redis with a script looping on `TIME`, which Valkey keeps
+  still inside a script, so the stall lasted until the 5 s busy threshold and other clients got
+  `BUSY` replies: their shared `BUSY_LOOP` (`tests/support`) also ends on the server's CPU time
+  (`os.clock`, Redis 7 and Valkey), and they raise the busy threshold (`lua-time-limit`), so
+  that a stall a loaded machine slows down still holds the commands sent meanwhile. The periodic
+  one stalls its second tick: its first loads `FIRE`'s script, without which the late `FIRE`
+  failed (`NOSCRIPT`) and the test passed only through the poller's next attempt, when that one
+  came after the stall (now it checks the late `FIRE` itself). The dashboard tests expect the
+  product the server announces (Redis, Valkey or Dragonfly) rather than Redis. Stored backtraces
+  leave out the standard library's frames whatever the toolchain's source layout (its
+  `library/<crate>/src/` paths, not only rustup's `/rustc/`): on Homebrew's Rust an inlined
+  `Pin<Box<dyn Future>>::poll` frame stayed in them; the backtrace tests know a job's frames by
+  their locations, since names depend on the platform's symbolization (`{async_fn#0}` on macOS).
+- [x] README, guide, examples, rustdoc: the top-level `README.md` is an overview (the
+  dashboard's screenshot in light and dark, highlights, a quick start, the dashboard, the
+  benchmark results against Sidekiq, a feature table, links to the documentation, the crates,
+  MSRV, license and credits); the guide, `docs/guide`, holds what the README used to (a page
+  per topic: getting started, jobs, configuration, retries and delivery guarantees, middleware,
+  testing, unique jobs, periodic jobs, batches and workflows, rate limiting, iterable jobs,
+  metrics, the features together, the dashboard, the `hench` command, deployment, differences
+  from Sidekiq) and the roadmap moved to `docs/ROADMAP.md`. The 23 Rust examples (2 in the
+  README, 21 in the guide) are doc tests of `hench-server` (`ReadmeDoctests` and
+  `guide_doctests`: all compile, those that need no Redis run), and
+  `ci/check-readme-examples.sh` builds each document's examples against the dependencies it
+  lists; `tests/readme.rs` checks that every guide page with an example is a doc test and that
+  the documents' links resolve (the README's are absolute, since crates.io shows it). `hench`,
+  `hench-web` and `hench-server` package the README as their readme, and its links into the
+  repository, its images included, like the rustdoc's links to the design documents, are pinned
+  to the release tag. Examples `axum_embedded`, `worker` (on `hench::cli`) and `hench-web`'s
+  `embedded` run against a real Redis; rustdoc complete (`-D warnings`)
+- [x] Benchmarks (`benchmarks/`, a workspace crate that is not published): `henchload`,
+  `multi_queue_bench` and `webload` port Sidekiq 8.1's `bin/sidekiqload`, `bin/multi_queue_bench`
+  and `bin/webload` (their parameters, jobs, arguments, clocks and output lines);
+  `benchmarks/run.sh` runs them and Sidekiq 8.1.7's own scripts (from the gem, pinned by
+  `benchmarks/sidekiq/Gemfile.lock`) on one machine, each run against a fresh private
+  `redis-server`, rounds alternating, and records the environment, every run's output, a CSV
+  and the medians under `benchmarks/results/`; `benchmarks/README.md` has the results next to
+  the figures Sidekiq published. On an EC2 c7i.4xlarge (medians of five runs, the CPU idle
+  state C6 disabled, which `setup-ubuntu.sh` now does and `run.sh` records; Hench with `TCP_NODELAY`,
+  its dashboard from the session before), Hench runs `bin/sidekiqload` 2.79 times as fast as Sidekiq 8.1.7
+  with reliable fetch and 4.82 times with basic fetch; with 1 ms of latency 0.52 and 0.98 times at
+  30 threads (two Redis round trips per job with reliable fetch, one with basic fetch as with
+  Sidekiq) and 1.38 and 2.36 times at 100; `bin/multi_queue_bench`, which Redis bounds, 0.77 and
+  1.29 times; the dashboard 1.69 (`/busy`) and 1.97 (`/queues`) times. Turning `TCP_NODELAY` on
+  made the latency runs 1.33 to 1.73 times as fast (before it, Nagle's algorithm
+  on the shared connection held commands back: 0.30 and 0.59 times Sidekiq at 30 threads). A
+  first session with C6 enabled, which slowed both systems down by up to six times, is kept.
 - [x] Release: `docs/RELEASING.md` (repository settings, version bumps, the gate, the tag, the
   publishing order, compatibility promises); `CHANGELOG.md` (Keep a Changelog: 0.1.0's
   features, known limitations and requirements; `[Unreleased]` names what 0.2 plans); the
-  README's Roadmap and installation from crates.io; `ci/check-package.sh` (CI job `package`)
+  roadmap and installation from crates.io; `ci/check-package.sh` (CI job `package`)
   packages the crates, builds every target of the packaged `hench`, `hench-web` and
-  `hench-server` from their `.crate` files and runs the README's doc tests from the packaged
-  `hench-server` (`crates/hench-server/README.md` links to the repository's README)
+  `hench-server` from their `.crate` files and runs the doc tests of the README and the guide
+  from the packaged `hench-server` (`crates/hench-server/README.md` and `guide` link to the
+  repository's README and `docs/guide`)
 - [x] Review rounds (log below): spine 4, engine 5, api lane 7, integration 6, features lane 1, web lane 3, surface fixes 2, engine fixes 2, whole-tree review rounds 4 (the third on the pro features, fixed by four lanes; the fourth, the release review, by two)
 
 ## Remaining gaps (versus DESIGN.md and Sidekiq's test suite)
 - Every section of DESIGN.md is implemented; what follows is missing versus Sidekiq or limited
-  on purpose. Phase 3 of the pro features is planned for 0.2; the README's roadmap lists it with
-  a few of the gaps below ("later") for users.
+  on purpose. Phase 3 of the pro features is planned for 0.2; the roadmap (`docs/ROADMAP.md`)
+  lists it with a few of the gaps below ("later") for users.
 - Dashboard: English only (no locale switching: `web_test`'s "can show text with any
   locales", "can change the locale" and "user defined tab with custom locales" are not
   ported); extensions bring no locales, views or assets of their own (their pages are HTML
   strings rendered in the layout, their assets routes of their own); no profiles page
   (Sidekiq 8's Vernier profiling).
+- Tests: two rate-limit tests depend on wall-clock timing and failed once each under a loaded
+  machine during the 0.1.0 release gate (each passes alone, and the next full run passed):
+  `tests/limit.rs` `a_rescheduled_job_moved_back_early_runs_at_its_place` (the moved-back job
+  ran after a later one) and `tests/limit_engine.rs`
+  `custom_errors_are_refusals_through_over_limit_when` (the remaining delay is measured after
+  `launcher.stop()`, which can take seconds). Both need more slack or a measurement taken
+  earlier.
 - The process title (proctitle) does not exist. `TTIN` (signal or `api::Process::dump`) logs
   each busy slot's job, not the tasks' stacks (tokio's task dumps need `tokio_unstable`), and
   the `hench` command has no `dump` subcommand yet (hench-server's).
+- Redis: with latency between a process and Redis, one shared multiplexed connection
+  (`RedisConfig::shared_connections`, 1 by default) also holds a process with many processors
+  back: at 100 threads and 1 ms, `bin/sidekiqload` with basic fetch ran 47,381 jobs/s (median)
+  with one and 61,439 (a single run) with 64 shared connections (`benchmarks/README.md`, "Why
+  Hench falls behind with latency"). The default stays 1; a process with many processors and a distant
+  Redis can raise it.
 - Redis: TLS through Sentinel (`rediss+sentinel://`) is refused; the `hench` command has no
   options for a private CA or a client certificate (`rediss://...#insecure` works for
   self-signed servers); `hench::cli`'s worker options have no TLS settings either.
@@ -334,7 +387,8 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
   U7), locks taken back by crash, shutdown and orphan requeues or by a revival from the morgue
   (U13, U14); creating and editing schedules in the dashboard, a `cron` macro attribute,
   start and end dates, run limits and RRULE, sub-second schedules (periodic.md D10, D19, D20);
-  per-key round-robin sub-queues (ratelimit.md D2). Not exercised on Valkey or Dragonfly.
+  per-key round-robin sub-queues (ratelimit.md D2). Not exercised on Dragonfly; the suite passes
+  on Valkey 9 (run by hand, see Quality).
 - Metrics pages: metrics written by Sidekiq itself (two-digit-year keys) are not read; the
   current minute is partial until the next heartbeats flush; at 8 hours the heat map's minute
   columns are a few pixels wide on narrow screens (the table view has every minute); only
