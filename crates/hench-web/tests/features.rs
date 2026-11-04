@@ -379,3 +379,31 @@ async fn the_busy_page_names_the_features_a_live_process_lacks() {
         .collect();
     assert_eq!(chips, ["lacks: batches"], "{}", busy.body);
 }
+
+#[tokio::test]
+async fn the_busy_page_names_processes_that_ignore_queue_limits() {
+    // hench 0.1 advertises `limits` but ignores queue limits: while a queue has limits, a
+    // process without `queue_limits` in its features lacks them.
+    let app = App::new().await;
+    let old = json!({"hostname": "old", "pid": 1, "identity": "old:1:a", "concurrency": 5,
+        "queues": ["default"], "features": {"unique": 1, "periodic": 1, "batches": 1,
+        "limits": 1}});
+    let new = json!({"hostname": "new", "pid": 2, "identity": "new:2:b", "concurrency": 5,
+        "queues": ["default"], "features": {"unique": 1, "periodic": 1, "batches": 1,
+        "limits": 1, "queue_limits": 1}});
+    add_process(&app, "old:1:a", old, 0).await;
+    add_process(&app, "new:2:b", new, 0).await;
+    assert!(!app.get("/busy").await.body.contains("lacks"));
+    app.api
+        .queue("exports")
+        .set_limits_from_str("concurrency=3")
+        .await
+        .unwrap();
+    let busy = app.get("/busy").await;
+    let chips: Vec<String> = busy
+        .texts(".chip")
+        .into_iter()
+        .filter(|chip| chip.starts_with("lacks"))
+        .collect();
+    assert_eq!(chips, ["lacks: queue_limits"], "{}", busy.body);
+}

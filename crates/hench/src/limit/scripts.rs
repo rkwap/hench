@@ -188,7 +188,7 @@ pub(crate) fn millis(duration: Duration) -> u64 {
 }
 
 /// `ARGV[1]`: a fixed time in tests, else `''` (Redis's clock).
-fn now_arg(now: Option<i64>) -> String {
+pub(crate) fn now_arg(now: Option<i64>) -> String {
     now.map(|now| now.to_string()).unwrap_or_default()
 }
 
@@ -570,7 +570,7 @@ pub(crate) async fn clear_line(pool: &RedisPool, stats: &str) -> Result<bool> {
     Ok(removed > 0)
 }
 
-fn unexpected(script: &str, what: &str) -> Error {
+pub(crate) fn unexpected(script: &str, what: &str) -> Error {
     Error::Redis(RedisError::from((
         ErrorKind::UnexpectedReturnType,
         "unexpected reply from a limiter script",
@@ -578,7 +578,7 @@ fn unexpected(script: &str, what: &str) -> Error {
     )))
 }
 
-fn array(value: Value, script: &str) -> Result<Vec<Value>> {
+pub(crate) fn array(value: Value, script: &str) -> Result<Vec<Value>> {
     match value {
         Value::Array(items) | Value::Set(items) => Ok(items),
         Value::Nil => Ok(Vec::new()),
@@ -586,7 +586,7 @@ fn array(value: Value, script: &str) -> Result<Vec<Value>> {
     }
 }
 
-fn int(value: &Value) -> Result<i64> {
+pub(crate) fn int(value: &Value) -> Result<i64> {
     match value {
         Value::Int(number) => Ok(*number),
         Value::BulkString(bytes) => std::str::from_utf8(bytes)
@@ -601,7 +601,7 @@ fn int(value: &Value) -> Result<i64> {
     }
 }
 
-fn text(value: &Value) -> Result<String> {
+pub(crate) fn text(value: &Value) -> Result<String> {
     match value {
         Value::BulkString(bytes) => Ok(String::from_utf8_lossy(bytes).into_owned()),
         Value::SimpleString(text) => Ok(text.clone()),

@@ -107,6 +107,17 @@ pub(crate) async fn in_use(ctx: &Ctx) -> WebResult<bool> {
     Ok(ctx.web.api().limits().size().await? > 0)
 }
 
+/// The heartbeat's name of queue limits, which hench 0.1 does not enforce (it advertises
+/// `limits` all the same).
+pub(crate) const QUEUE_FEATURE: &str = "queue_limits";
+
+/// Whether some queue has limits (`queue-limits` is not empty).
+pub(crate) async fn queues_limited(ctx: &Ctx) -> WebResult<bool> {
+    Ok(!hench::api::Queue::all_limits(ctx.web.api())
+        .await?
+        .is_empty())
+}
+
 /// `limits.html`.
 #[derive(Template)]
 #[template(path = "limits.html")]

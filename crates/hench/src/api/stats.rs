@@ -135,16 +135,19 @@ impl Stats {
         Ok(queues)
     }
 
-    /// The name, size, latency and paused state of every known queue and of every paused
-    /// queue, largest first (ties by name), in one pipelined round trip after the scans.
+    /// The name, size, latency, paused state and limits of every known queue and of every
+    /// paused or limited queue, largest first (ties by name), in one pipelined round trip after
+    /// the scans.
     ///
-    /// Pausing is by name: a paused queue emptied by [`Queue::clear`](crate::api::Queue::clear)
-    /// or paused before its first job is not in `queues`, but it stays paused (and holds the
-    /// jobs pushed to it later), so it is listed, with its size, to be resumed.
+    /// Pausing and limits are by name: a paused or limited queue emptied by
+    /// [`Queue::clear`](crate::api::Queue::clear), or paused or limited before its first job,
+    /// is not in `queues`, but it stays paused or limited (and holds the jobs pushed to it
+    /// later), so it is listed, with its size.
     pub async fn queue_summaries(api: impl Into<Api>) -> Result<Vec<QueueSummary>> {
         let api = api.into();
         let mut names = scan_set(api.redis(), keys::QUEUES).await?;
         names.extend(scan_set(api.redis(), keys::PAUSED).await?);
+        names.extend(limited_queues(api.redis()).await?);
         names.sort_unstable();
         names.dedup();
         if names.is_empty() {
@@ -160,21 +163,25 @@ impl Stats {
                 .arg(-1)
                 .cmd("SISMEMBER")
                 .arg(keys::PAUSED)
+                .arg(name)
+                .cmd("HGET")
+                .arg(keys::QUEUE_LIMITS)
                 .arg(name);
         }
         let pipe = &pipe;
-        let replies: Vec<(u64, Option<String>, bool)> = api
+        let replies: Vec<(u64, Option<String>, bool, Option<String>)> = api
             .redis()
             .with_retry(|mut conn| async move { pipe.query_async(&mut conn).await })
             .await?;
         let mut summaries: Vec<QueueSummary> = names
             .into_iter()
             .zip(replies)
-            .map(|(name, (size, oldest, paused))| QueueSummary {
+            .map(|(name, (size, oldest, paused, limits))| QueueSummary {
                 name,
                 size,
                 latency: oldest.as_deref().map_or(0.0, latency_of_raw),
                 paused,
+                limits,
             })
             .collect();
         summaries.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.name.cmp(&b.name)));
@@ -238,7 +245,7 @@ impl StatCounter {
     }
 }
 
-/// The size, latency and paused state of a queue, from [`Stats::queue_summaries`].
+/// The size, latency, paused state and limits of a queue, from [`Stats::queue_summaries`].
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct QueueSummary {
@@ -250,6 +257,9 @@ pub struct QueueSummary {
     pub latency: f64,
     /// `true` if the queue is in the `paused` set.
     pub paused: bool,
+    /// The queue's limits as stored (`concurrency=3;window=100/1m`, see
+    /// [`Queue::set_limits`](crate::api::Queue::set_limits)), if it has some.
+    pub limits: Option<String>,
 }
 
 /// Daily processed and failed counts (Sidekiq's `Stats::History`), from the
@@ -319,6 +329,22 @@ impl StatsHistory {
             .map(|(date, value)| (date, parse_count(value.as_deref())))
             .collect())
     }
+}
+
+/// The queues with limits (the fields of `queue-limits`).
+async fn limited_queues(redis: &crate::redis::RedisPool) -> Result<Vec<String>> {
+    let names: Vec<Vec<u8>> = redis
+        .with_retry(|mut conn| async move {
+            ::redis::cmd("HKEYS")
+                .arg(keys::QUEUE_LIMITS)
+                .query_async(&mut conn)
+                .await
+        })
+        .await?;
+    Ok(names
+        .iter()
+        .map(|name| String::from_utf8_lossy(name).into_owned())
+        .collect())
 }
 
 #[cfg(test)]

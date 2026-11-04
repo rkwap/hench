@@ -17,7 +17,7 @@ use crate::batch::BatchDefaults;
 use crate::client::Client;
 use crate::error::{Error, JobError, Result, panic_message};
 use crate::job::{Data, ErasedJob, Job, Registry};
-use crate::limit::{Backoff, OverLimit, Throttle};
+use crate::limit::{Backoff, Limit, OverLimit, Throttle};
 use crate::middleware::{ClientChain, ClientMiddleware, ServerChain, ServerMiddleware};
 use crate::options::JobOptions;
 use crate::payload::JobPayload;
@@ -508,6 +508,10 @@ pub struct Config {
     /// Throttles applied to the jobs that name them ([`crate::limit`]), in definition order (a
     /// later definition of a name replaces an earlier one).
     pub throttles: Vec<Throttle>,
+    /// Limits on every fetch of a queue, by queue ([`HenchBuilder::queue_limits`]): written to
+    /// Redis when the process starts, replacing the queue's stored limits (code wins over
+    /// run-time edits at the next start). Default none.
+    pub queue_limits: Vec<(String, Vec<Limit>)>,
     /// Recognizes job errors that are a limiter's refusal in disguise. Default none.
     pub over_limit_when: Option<OverLimitClassifier>,
     /// Reschedule delay policy of limiters without their own. Default: the limit's next slot,
@@ -764,6 +768,7 @@ impl Default for Config {
             batch_maintenance_interval: Self::DEFAULT_BATCH_MAINTENANCE_INTERVAL,
             batch_dispatch_grace: Self::DEFAULT_BATCH_DISPATCH_GRACE,
             throttles: Vec::new(),
+            queue_limits: Vec::new(),
             over_limit_when: None,
             over_limit_backoff: None,
             over_limit_reschedules: Self::DEFAULT_OVER_LIMIT_RESCHEDULES,
@@ -836,6 +841,7 @@ impl fmt::Debug for Config {
             )
             .field("batch_dispatch_grace", &self.batch_dispatch_grace)
             .field("throttles", &self.throttles)
+            .field("queue_limits", &self.queue_limits)
             .field("over_limit_when", &self.over_limit_when.is_some())
             .field("over_limit_backoff", &self.over_limit_backoff.is_some())
             .field("over_limit_reschedules", &self.over_limit_reschedules)
@@ -1603,6 +1609,43 @@ impl HenchBuilder {
     #[must_use]
     pub fn throttle(mut self, throttle: Throttle) -> Self {
         self.config.throttles.push(throttle);
+        self
+    }
+
+    /// Limits every fetch of `queue` (concurrency, window, bucket or leaky limits, at most one
+    /// of each kind): a queue over its limits is skipped like a paused one, its jobs keep their
+    /// order, and the other queues keep flowing. The limits apply to every process fetching the
+    /// queue (they live in Redis): this process writes them at every start (a deploy, a restart,
+    /// a scale-out), replacing the queue's stored limits and logging a value it replaces, so
+    /// that code wins over run-time edits (`Api::queue(..).set_limits`, the dashboard, `hench
+    /// queues limit`) at the next start, and two deployments configured differently overwrite
+    /// each other. Removing the call leaves the stored limits in place: clear them with
+    /// `hench queues limit <queue> --clear` or `Api::queue(..).clear_limits`. Workers of an
+    /// earlier hench version ignore queue limits, so upgrade every worker first. A later call
+    /// for the same queue replaces an earlier one. See [`crate::limit`] for the kinds of limits.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use hench::limit::Limit;
+    ///
+    /// let builder = hench::Hench::builder().queue_limits(
+    ///     "exports",
+    ///     [
+    ///         Limit::Concurrency { limit: 3 },
+    ///         Limit::Window { limit: 100, period: Duration::from_secs(60) },
+    ///     ],
+    /// );
+    /// ```
+    #[must_use]
+    pub fn queue_limits(
+        mut self,
+        queue: impl Into<String>,
+        limits: impl IntoIterator<Item = Limit>,
+    ) -> Self {
+        let queue = queue.into();
+        let limits: Vec<Limit> = limits.into_iter().collect();
+        self.config.queue_limits.retain(|(name, _)| *name != queue);
+        self.config.queue_limits.push((queue, limits));
         self
     }
 

@@ -142,10 +142,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   `hench::limit::testing::memory_target()` is a target whose limits live in memory, for testing
   code that uses limiters; `Client::limited_jobs::<J>()` lists the captured jobs a limit
   rescheduled.
-- Queue limits (a concurrency or rate limit on a whole queue, applied when workers fetch from
-  it) are planned for 0.2 (see the [roadmap](../ROADMAP.md)). Until then, a throttle on the queue's
-  job types does the same per type; a `[queue_limits]` table in the worker's file is refused
-  rather than ignored.
 - Operations: the dashboard's **Limits** tab lists every limit in use (use, next free slot,
   grants, refusals, wait line), the throttles live processes declare, each limit's holders and
   waiting jobs, and resets limits or clears wait lines; `hench limits` (`list`, `show`, `reset
@@ -153,6 +149,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   `GET` and `DELETE <prefix>/api/v1/limits/{kind}/{id}`; `hench web --api`) do the same from
   scripts; `hench::api::Api::limits()` from
   code. Job metrics count over-limit reschedules and throttled starts per class.
+
+## Queue limits
+
+A **queue limit** applies to every fetch of a queue, whatever its jobs: workers take a job
+from a limited queue only when its limits grant one, and charge them in the same step. A
+queue over its limits is skipped like a paused one: its jobs stay in it, in order (nothing is
+parked in the schedule, so a large backlog costs nothing while it waits), and the worker
+fetches from its other queues meanwhile. Use one to protect a resource that every job of a
+queue uses, or to run a queue of heavy jobs a few at a time across all your workers.
+
+```rust,no_run
+use std::time::Duration;
+
+use hench::limit::Limit;
+use hench::prelude::*;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let hench = Hench::builder()
+        .queues(["default", "exports"])
+        // At most 3 exports at a time in the whole cluster, and 100 a minute.
+        .queue_limits(
+            "exports",
+            [
+                Limit::Concurrency { limit: 3 },
+                Limit::Window { limit: 100, period: Duration::from_secs(60) },
+            ],
+        )
+        .build()
+        .await?;
+    hench.run().await?;
+    Ok(())
+}
+```
+
+- A queue takes concurrency, window, bucket and leaky limits, at most one of each kind (a
+  points budget needs a cost known after the job ran, which a fetch cannot know).
+- The limits live in Redis and apply to every process fetching the queue. Change them at run
+  time from the queue's page in the dashboard, with `hench queues limit exports --set
+  "concurrency=5"` (or `--clear`), `PUT <prefix>/api/v1/queues/exports/limits` with
+  `{"limits": "concurrency=5"}` (and `DELETE` to clear), or
+  `api.queue("exports").set_limits(..)` from code: every worker applies them within a
+  heartbeat interval (10 s by default).
+- A worker that has limits for a queue in its configuration (`HenchBuilder::queue_limits`, or
+  a `[queue_limits]` table in its file, `exports = "concurrency=3; window=100/1m"`) writes them
+  at **every start** (deploys, restarts after a crash, scale-outs), logging any stored value it
+  replaces: code wins over run-time edits at the next start, and two deployments configured
+  differently overwrite each other. Removing a queue from the configuration leaves its stored
+  limits in place; clear them with `hench queues limit <queue> --clear`. An environment's
+  section of the file (`[production.queue_limits]`) replaces the top-level table as a whole.
+- Upgrade every worker before setting queue limits: a worker of an earlier version fetches the
+  queue without them (the dashboard's Busy page marks such processes "lacks: queue_limits").
+- A job holds its queue's concurrency slot while it runs (renewed by the heartbeat, given back
+  once its outcome is written; a crashed worker's slots end with their one-minute lease). A
+  rate limit is charged once per job taken.
+- `hench queues` and the dashboard's Queues page show each queue's limits; the use of each one
+  is on the **Limits** tab, under the limiter name `@<queue>` (`c:@exports`, `w:@exports`).
+- Queue limits or throttles? A queue limit counts every job of a queue together and costs
+  nothing while jobs wait; a throttle limits job types (and keys, such as tenants), whichever
+  queue they are in, and parks the jobs it refuses. A queue's jobs can have both: the queue
+  limit is checked when the job is fetched, the throttle when it is about to start, so a job
+  the throttle parks has already used a unit of the queue's rate limits (its concurrency slot
+  is given back).
+- Stored limits that do not parse (edited by hand in Redis) make every worker leave the queue
+  alone, with an error in its logs, until they are set again or cleared: a broken limit never
+  lifts the protection it was meant to give.
+- A worker waits for new jobs on one queue at a time, and one worker per process watches each
+  empty limited queue. When a burst arrives on a limited queue, the first job starts at once
+  and the next ones as soon as sleeping workers are woken (in any capsule fetching the queue),
+  or, if the other workers are waiting on unlimited queues, within the fetch timeout (2 s by
+  default). Give a limited queue its own capsule when its bursts must start at once.
 
 ---
 

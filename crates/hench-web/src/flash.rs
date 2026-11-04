@@ -64,10 +64,14 @@ pub(crate) enum NoticeKind {
     LineCleared,
     /// Unique locks released (subject: the digest, for one).
     LocksReleased,
+    /// The limits of a queue set (subject: its name).
+    QueueLimited,
+    /// The limits of a queue cleared (subject: its name).
+    QueueUnlimited,
 }
 
 impl NoticeKind {
-    const ALL: [NoticeKind; 23] = [
+    const ALL: [NoticeKind; 25] = [
         NoticeKind::Retried,
         NoticeKind::Enqueued,
         NoticeKind::Deleted,
@@ -91,6 +95,8 @@ impl NoticeKind {
         NoticeKind::LimitsReset,
         NoticeKind::LineCleared,
         NoticeKind::LocksReleased,
+        NoticeKind::QueueLimited,
+        NoticeKind::QueueUnlimited,
     ];
 
     fn code(self) -> &'static str {
@@ -118,6 +124,8 @@ impl NoticeKind {
             NoticeKind::LimitsReset => "l-reset",
             NoticeKind::LineCleared => "l-cleared",
             NoticeKind::LocksReleased => "u-released",
+            NoticeKind::QueueLimited => "q-limited",
+            NoticeKind::QueueUnlimited => "q-unlimited",
         }
     }
 

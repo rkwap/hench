@@ -205,6 +205,10 @@ pub(crate) async fn features_in_use(ctx: &Ctx) -> WebResult<Vec<&'static str>> {
     if web.limits && limits::in_use(ctx).await? {
         in_use.push(limits::FEATURE);
     }
+    // Queue limits are enforced by every worker's fetch, whatever the Limits tab shows.
+    if limits::queues_limited(ctx).await? {
+        in_use.push(limits::QUEUE_FEATURE);
+    }
     Ok(in_use)
 }
 

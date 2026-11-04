@@ -519,6 +519,7 @@ async fn processes_advertise_their_throttles() {
     let info: Value = serde_json::from_str(&process["info"]).unwrap();
     assert_eq!(info["throttles"]["slow"], json!("c=25;w=5/1000 per key"));
     assert_eq!(info["features"]["limits"], json!(1));
+    assert_eq!(info["features"]["queue_limits"], json!(1));
     started.launcher.stop().await.unwrap();
 }
 

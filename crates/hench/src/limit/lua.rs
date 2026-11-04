@@ -1,7 +1,7 @@
 //! The Lua of rate limiting (`docs/design/ratelimit.md` §2.9): `LIMIT_ACQUIRE`,
-//! `LIMIT_RELEASE`, `LIMIT_RENEW`, `LIMIT_ADJUST`, `LIMIT_USAGE`, `LIMIT_RESET` and `LIMIT_TRIM`, each
-//! assembled by [`crate::lua`] as `<prelude> + LIB + <body>`. (Clearing a wait line is a single
-//! `HDEL`; queue limits' `FETCH_GATE` comes with queue limits.)
+//! `LIMIT_RELEASE`, `LIMIT_RENEW`, `LIMIT_ADJUST`, `LIMIT_USAGE`, `LIMIT_RESET`, `LIMIT_TRIM`
+//! and `LIMIT_FETCH_GATE` (queue limits' fetch, §2.7), each assembled by [`crate::lua`] as
+//! `<prelude> + LIB + <body>`. (Clearing a wait line is a single `HDEL`.)
 //!
 //! Every script reads the time once, from Redis (`ARGV[1]` may fix it, for tests only: the
 //! wrappers in [`crate::limit::scripts`] send `''` outside tests), checks every limit before its
@@ -56,10 +56,17 @@ pub(crate) static LIMIT_RESET: LuaScript = LuaScript::new(
 pub(crate) static LIMIT_TRIM: LuaScript =
     LuaScript::new("LIMIT_TRIM", &[PRELUDE, LIB, include_str!("lua/trim.lua")]);
 
+/// The non-blocking step of a fetch from a capsule with limited queues: takes the next job of
+/// the first open queue whose limits grant one, charging them in the same step.
+pub(crate) static LIMIT_FETCH_GATE: LuaScript = LuaScript::new(
+    "LIMIT_FETCH_GATE",
+    &[PRELUDE, LIB, include_str!("lua/fetch_gate.lua")],
+);
+
 /// Every script of rate limiting, for the tests that load and check each one.
 #[cfg(any(test, feature = "test-util"))]
 pub(crate) fn scripts() -> &'static [&'static LuaScript] {
-    static SCRIPTS: [&LuaScript; 7] = [
+    static SCRIPTS: [&LuaScript; 8] = [
         &LIMIT_ACQUIRE,
         &LIMIT_RELEASE,
         &LIMIT_RENEW,
@@ -67,6 +74,7 @@ pub(crate) fn scripts() -> &'static [&'static LuaScript] {
         &LIMIT_USAGE,
         &LIMIT_RESET,
         &LIMIT_TRIM,
+        &LIMIT_FETCH_GATE,
     ];
     &SCRIPTS
 }

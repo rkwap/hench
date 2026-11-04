@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | ![The Retries page: failed jobs waiting for their next attempt, with their arguments and errors](../assets/retries.png) | ![The Metrics page: execution time per minute and a table of executions, failures and times per job class](../assets/metrics.png) |
 
 Pages: the dashboard (live chart, history, Redis), busy processes (quiet and stop them),
-queues (pause, resume, delete, browse, filter), retries, scheduled and dead jobs (filter,
+queues (pause, resume, set or clear their limits, delete, browse, filter), retries, scheduled and dead jobs (filter,
 retry, enqueue now, delete, kill, in bulk or all at once), each job in detail (arguments,
 error and backtrace, iteration progress, and its batch, schedule, lock and limits), and the
 tabs of the features: periodic schedules (enqueue now, pause, resume, delete), batches

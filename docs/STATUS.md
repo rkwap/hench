@@ -8,8 +8,8 @@ crates are at 0.1.0, with `CHANGELOG.md` (its 0.1.0 entry: features, known limit
 requirements) and the roadmap (`docs/ROADMAP.md`); every gate passes (review log, release review round 4, and the
 release gate on `main`; two timing-sensitive tests that failed once under load have been fixed
 since). The repository is public.
-Phase 3 of the pro features (below) is deferred to 0.2 by the owner's decision and is not
-started.
+Phase 3 of the pro features (below) is planned for 0.2: queue limits are done (on the
+`queue-limits` branch, not released), the batch items and the lean lock mode are not started.
 
 ## Core (`crates/hench`)
 - [x] keys, payload (+ jid, time helpers, backtrace codec), options, error/JobError
@@ -205,10 +205,24 @@ started.
   macro expansion, the testing executor (`TestLimits::InMemory` parks refused jobs), the
   `hench::api` re-exports, list chips, the metrics columns; parked jobs wake their process's
   scheduler at their slot (§9j item 8, `scheduled::Wakeups`)
-- [ ] queue limits (phase 3): `FETCH_GATE`, the `queue-limits` hash and its cache,
-  `Queue::{limits, set_limits, clear_limits}`, `HenchBuilder::queue_limits`, `[queue_limits]`
-  (refused today), `hench queues limit`, `PUT/DELETE /queues/{name}/limits`, the dashboard's
-  queue form
+- [x] queue limits (phase 3, DESIGN §9j "Queue limits"): `LIMIT_FETCH_GATE`
+  (`limit/lua/fetch_gate.lua`), the `queue-limits` hash and the process's cache with its
+  cooldowns, single probes and watches (`limit/queue.rs`), the blocking step's watch of a
+  limited queue (`BLMOVE q q RIGHT RIGHT`), permits held per processor slot,
+  `Queue::{limits, set_limits, set_limits_from_str, clear_limits, all_limits}`,
+  `HenchBuilder::queue_limits`, `[queue_limits]`, `hench queues limit`, `PUT/DELETE
+  /queues/{name}/limits`, the limits of `GET /queues` and `hench queues`, the dashboard's chips
+  and queue form, `Fetcher::release_limits`; tests: the gate against `redis-server`
+  (`limit/script_tests.rs` `fetch_gate`: plain queues, stale views, concurrency, rate waits,
+  every kind, empty and paused queues, ended leases), real workers (`tests/queue_limits.rs`:
+  FIFO under a concurrency limit with both fetch strategies, a window's pace, run-time changes,
+  a job arriving on a full queue, a burst on a full queue with 20 waiting processors (both
+  strategies), refusals bounded with 20 idle processors, one poll per cooldown, script calls
+  per job independent of idle workers, a plain capsule beside a cooling one, capsules sharing a
+  limited queue (bursts and a rate limit), watched and plain queues together, pause, renewals and releases, configuration at start, refusals,
+  broken stored limits, a standalone fetcher, a hard shutdown, three processes sharing a
+  limit), the file (`limit/toml.rs`, `cli.rs`), the command and JSON API
+  (`hench-server/tests/queue_limits.rs`), the dashboard (`hench-web/tests/actions.rs`)
 
 ### Batches (lane B, §9i)
 - [x] scripts (`BATCH_COMMIT` with its unique section on the frozen library, `BATCH_SUCCEEDED`,
@@ -270,11 +284,12 @@ started.
 - [x] DESIGN §9k (the features together, the decisions of phase 2), §10's rows, README "Using
   the features together" (an example using every feature, recipes, the rollout rule, sizing)
 
-### Phase 3 (planned for 0.2, not started; `docs/design/pro-features.md` §6.1)
-The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHANGELOG.md`'s
+### Phase 3 (planned for 0.2; `docs/design/pro-features.md` §6.1)
+The owner deferred it to 0.2 when releasing 0.1.0; the roadmap and `CHANGELOG.md`'s
 `[Unreleased]` section list it for users, each item with what happens until then.
-- [ ] queue limits: `FETCH_GATE` and its cache (`docs/design/ratelimit.md` §2.4.5, §2.7,
-  §2.9.7), with their API, builder, file, command, JSON and dashboard surfaces
+- [x] queue limits: `LIMIT_FETCH_GATE` and its cache (`docs/design/ratelimit.md` §2.4.5, §2.7,
+  §2.9.7, as implemented in DESIGN §9j), with their API, builder, file, command, JSON and
+  dashboard surfaces (see Rate limiting above)
 - [ ] staged batch commits above `batch_max_commit_jobs` (`docs/design/batches.md` §2.20)
 - [ ] the iterable checkpoint's cancellation check and the process-wide cache of cancelled
   batches (`docs/design/batches.md` §2.6.5, D12); batch tags on Redis 7.4+ (D15)
@@ -381,8 +396,8 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
 - Sidekiq Pro/Enterprise features: queue pausing, unique jobs, periodic jobs, batches and rate
   limiting are implemented (`docs/design/pro-features.md`); encrypted arguments (only their
   display is handled) and leader election are out of scope (periodic jobs need no leader).
-  What the four feature documents defer (phase 3 and "not in v1"): queue limits
-  (`FETCH_GATE`, ratelimit.md §2.7); staged batch commits above `batch_max_commit_jobs` (loader
+  What the four feature documents defer (phase 3 and "not in v1"), queue limits aside (done
+  for 0.2): staged batch commits above `batch_max_commit_jobs` (loader
   jobs meanwhile), the iterable checkpoint's cancellation check (an iterable member of a
   cancelled batch is skipped at its next execution), a process-wide cache of cancelled
   batches and batch tags (batches.md §2.20, D12, D15); the unique `lean` lock mode (unique.md
@@ -484,6 +499,108 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
 
 ## Review log
 _(newest first: date, scope, findings fixed)_
+
+- 2026-11-04, review of queue limits, round 4: a final check of round 3 for regressions and
+  flakiness. Nothing blocks merging.
+  - Verified:
+    - the waker registry is bounded by capsules × queues, with no lock-order or panic
+      hazard;
+    - no wake-up storm with Redis killed, paused or out of memory (same counts as round 2);
+    - the 250 ms backstop adds no steady-state calls;
+    - `queue_limits` passed 20 runs under CPU load (up to 6 busy loops and 3 suites at
+      once, or one shared core).
+  - Fixed:
+    - a public `retrieve_work` future dropped while it waited kept timing its cooldowns. It
+      now hands them on (`a_dropped_fetch_hands_on_the_cooldowns_it_timed`);
+    - two sentences of DESIGN and ratelimit.md still described round-2 wake-ups.
+  - Documented: wake-ups fan out to every capsule sharing a queue. On a trickle that costs a
+    read-only gate call per extra capsule (5 a job for 4 capsules, against 2). It is the
+    price of the round-3 fix, which doubled what a shared backlog runs.
+- 2026-11-04, review of queue limits, round 3: a hunt for stalls and lost wake-ups after
+  round 2 removed the broadcast wake-ups.
+  - Verified: within one capsule nothing is lost (hand-offs, the grant chain, timer duty); the
+    herd fix holds (2.5 script calls per job with 20 and 50 workers); FIFO kept and no
+    over-admission (multi-thread runtime, 4 shared connections).
+  - Fixed, both reproduced first: every wake-up went to the waking worker's own capsule, so
+    capsules sharing a limited queue missed each other's.
+    - A burst taken by one capsule's watcher left four idle workers of the other capsule,
+      and four free slots, waiting 1.3 s.
+    - A shared rate-limited queue whose probe a busy capsule kept handing on ran 35–50 of
+      80 jobs, with 2 s gaps.
+    - Now each capsule registers its queues and waker with the shared cooldowns, and a
+      wake-up for a queue reaches one sleeping worker of each capsule fetching it. Now 5
+      start at once, and 80 of 80 run with gaps of at most 518 ms.
+    - A worker waiting for a queue probed elsewhere now looks again within 250 ms.
+  - Also fixed:
+    - a worker that failed a fetch or ended (a crashed processor) kept the cooldowns it
+      timed; it now hands them on;
+    - a cooling queue could be watched, making its timer re-fetch every 10 ms.
+  - Tests: `capsules_sharing_a_queue_wake_each_other` (both strategies),
+    `a_rate_limited_queue_shared_by_two_capsules_keeps_its_pace`, and unit tests for the
+    registry and the 250 ms backstop.
+- 2026-11-04, review of queue limits, round 2: an adversarial review of the round-1 engine
+  (production 2 s fetch timeout, repro tests).
+  - Verified: no over-admission (3 processes switching limits during bursts), FIFO kept, no
+    stall beyond the fetch timeout, no spin, `release_unused` safe.
+  - Fixed, all reproduced first:
+    - Every freed slot and probe refusal woke every sleeping worker, which then fetched again.
+      With an idle limited queue beside a busy one, script calls ran at 39 per job with 20
+      workers and 99 with 50. Now nothing but changed limits wakes them all; each cooldown is
+      timed by one worker; a watched queue is left to its watcher. Now about 2.5 per job with
+      5 or 50 workers, and 3.5 (was 40) beside a paused queue.
+    - A cooldown in one capsule shortened another capsule's waits: a plain capsule's 10
+      workers blocked 70 times in 2 s instead of 10. Waits now count only the capsule's
+      queues.
+    - A slot freed while a probe was in flight could cool the queue for 250 ms anyway.
+    - A stale reply lost the refusals before it.
+    - `blocking()` scanned the keys linearly.
+  - Documented (bounded by the fetch timeout, like reliable fetch's rotation):
+    - the rest of a burst when the capsule's other workers block on unlimited queues;
+    - with basic fetch and few workers, an unlimited job while its worker watches;
+    - a first burst reordered when limits are set during blocking waits;
+    - the watch's `BLMOVE` being refused under out-of-memory.
+  - Tests: `idle_workers_are_not_woken_for_every_job_of_a_busy_queue` and
+    `a_capsule_without_limits_is_not_woken_by_another_capsules_cooldowns`, plus unit tests for
+    timing, freed-during-probe and watched queues.
+  - Throughput (`ci/throughput.sh`, 50 000 jobs, 4 cores, run-to-run deviation about 10 %):
+    - plain jobs against the branch's base `4a4d0a9`: medians 26 337 against 27 578 jobs/s
+      (−4.5 %), and +6.3 % in an earlier run: no change beyond noise;
+    - the `queue-limited` kind against the first implementation `bccdbd3`: 9 527 against
+      10 363 (−8.1 %; the grant's re-check adds one read);
+    - against round 1 `e66e189`: +4.0 %.
+  - `ci/throughput.sh` built both revisions in one target directory, so cargo could link the
+    head example against the base revision's library (a stale build that failed to compile).
+    The base revision now builds in `<target>/throughput-base`.
+- 2026-11-04, review of queue limits (branch `queue-limits`), round 1: two reviewers, one on
+  the engine (gate, cache, cooldowns, blocking step, permits) and one on the surfaces (API,
+  builder, file, command, JSON API, dashboard, docs).
+  - Engine, 2 major findings, both reproduced and fixed:
+    - A burst on a full queue lost its order: several blocked fetches each took a job, were
+      refused and pushed it back in the order of their refusals (5 of 5 rounds).
+      - Fix: the blocking step never takes from a limited queue. One fetch per process
+        watches it (`BLMOVE q q RIGHT RIGHT`), and jobs leave it only through the gate.
+    - Idle processors stampeded a full queue (Redis writes grew with the idle processors).
+      - Before: 551 refusals for 30 jobs with 20 processors; about 76 a second while one
+        job held a `c=1` slot.
+      - Fix: one probe per process when a cooldown ends; a grant that fills the limits says
+        so; skipped queues are reported with a grant; idle workers are woken one at a time.
+      - After: 19 refusals (only the processors starting together); about 4 a second.
+  - Engine, 4 minor findings, all fixed:
+    - Concurrent refreshes could roll the cache back; they are now serialized.
+    - A limit state of the wrong type stopped the whole capsule; it now closes its queue
+      alone.
+    - A basic fetch's job whose push-back failed was lost silently; it is now logged in full.
+    - A lost or failed gate reply leaked a slot for a whole lease; the fetch's token is now
+      released.
+  - Surfaces: 11 findings, all fixed:
+    - the `queue_limits` heartbeat feature and the Busy page's "lacks" chip;
+    - doubled "configuration error" prefixes;
+    - queue names in errors, and a hint for limits joined by `,`;
+    - usage links only for limits in use;
+    - `set_limits` returns the stored form, plus `stored_limits`;
+    - 400 for invalid limits in the JSON API;
+    - docs: start semantics, rollout, environment sections, standalone fetchers, and the
+      throttle's rate charge.
 
 - 2026-11-02, final check of the 0.1.0 tree: GitHub CI's stable toolchain (rustc 1.99.1) has a
   clippy lint the local 1.97 lacks, `chunks_exact_to_as_chunks`, which failed CI's Clippy step

@@ -110,6 +110,16 @@ pub(crate) struct Strings {
     pub(crate) oldest_first: &'static str,
     pub(crate) show_all: &'static str,
     pub(crate) confirm_delete_job: &'static str,
+    pub(crate) queue_limits: &'static str,
+    pub(crate) queue_limits_help: &'static str,
+    pub(crate) no_queue_limits: &'static str,
+    pub(crate) invalid_queue_limits: &'static str,
+    pub(crate) queue_limits_label: &'static str,
+    pub(crate) queue_limits_placeholder: &'static str,
+    pub(crate) set_limits: &'static str,
+    pub(crate) clear_limits: &'static str,
+    pub(crate) confirm_clear_limits: &'static str,
+    pub(crate) limit_usage: &'static str,
     pub(crate) empty_queue: &'static str,
     pub(crate) waiting_since: &'static str,
 
@@ -314,6 +324,22 @@ pub(crate) static EN: Strings = Strings {
     oldest_first: "Oldest first",
     show_all: "Show all",
     confirm_delete_job: "Delete this job?",
+    queue_limits: "Limits",
+    queue_limits_help: "Limits on every fetch of this queue, in every worker: a queue over its \
+                        limits is skipped like a paused one, its jobs keep their order and the \
+                        other queues keep flowing. Concurrency, window, bucket and leaky limits, \
+                        at most one of each kind. Workers apply a change within a heartbeat; a \
+                        worker that starts with limits for this queue in its configuration writes \
+                        its own back.",
+    no_queue_limits: "None: workers fetch this queue freely.",
+    invalid_queue_limits: "The stored limits are not valid, so workers leave this queue alone: \
+                           set them again or clear them.",
+    queue_limits_label: "Limits (joined by ;)",
+    queue_limits_placeholder: "concurrency=3; window=100/1m",
+    set_limits: "Set limits",
+    clear_limits: "Clear limits",
+    confirm_clear_limits: "Clear the limits of this queue? Every worker then fetches it freely.",
+    limit_usage: "Usage",
     empty_queue: "This queue is empty.",
     waiting_since: "waiting since",
 
@@ -567,6 +593,13 @@ pub(crate) fn notice(notice: &Notice) -> String {
         NoticeKind::QueueCleared => format!("Deleted queue “{subject}”."),
         NoticeKind::QueuePaused => format!("Paused queue “{subject}”."),
         NoticeKind::QueueUnpaused => format!("Resumed queue “{subject}”."),
+        NoticeKind::QueueLimited => format!(
+            "Set the limits of queue “{subject}”: every worker applies them within a heartbeat."
+        ),
+        NoticeKind::QueueUnlimited => format!(
+            "Cleared the limits of queue “{subject}”: every worker fetches it freely within a \
+             heartbeat."
+        ),
         NoticeKind::Quieted => format!("Asked {} to quiet down.", processes(notice.count)),
         NoticeKind::Stopped => format!("Asked {} to stop.", processes(notice.count)),
         NoticeKind::NothingSelected => "Select at least one job first.".to_owned(),

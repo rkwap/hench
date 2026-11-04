@@ -42,8 +42,9 @@ pub enum Command {
     Stats(StatsArgs),
     /// List the live processes.
     Processes(OutputArgs),
-    /// List the queues with their size and latency.
-    Queues(OutputArgs),
+    /// List the queues with their size, latency and limits; `hench queues limit` sets or
+    /// clears the limits of a queue.
+    Queues(QueuesArgs),
     /// Ask a process (by identity) or every process (`all`) to stop taking new jobs.
     Quiet(SignalArgs),
     /// Ask a process (by identity) or every process (`all`) to shut down.
@@ -171,6 +172,46 @@ pub enum Section {
 #[derive(Debug, Clone, Args)]
 pub struct OutputArgs {
     /// Print JSON instead of text.
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// `hench queues`.
+#[derive(Debug, Clone, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct QueuesArgs {
+    /// What to do (default: list the queues).
+    #[command(subcommand)]
+    pub command: Option<QueuesCommand>,
+    /// The options of the list.
+    #[command(flatten)]
+    pub list: OutputArgs,
+}
+
+/// The subcommands of `hench queues`.
+#[derive(Debug, Clone, Subcommand)]
+pub enum QueuesCommand {
+    /// Set or clear the limits on every fetch of a queue: a queue over its limits is skipped
+    /// like a paused one, its jobs keep their order, and the other queues keep flowing. Every
+    /// worker applies new limits within a heartbeat interval (10 s by default); a worker that
+    /// starts with limits for the queue in its configuration writes its own back.
+    Limit(QueueLimitArgs),
+}
+
+/// `hench queues limit`.
+#[derive(Debug, Clone, Args)]
+#[command(group(clap::ArgGroup::new("change").required(true).args(["set", "clear"])))]
+pub struct QueueLimitArgs {
+    /// The queue.
+    pub queue: String,
+    /// The limits, joined by `;`: concurrency, window, bucket and leaky limits, at most one of
+    /// each kind ("concurrency=3; window=100/1m").
+    #[arg(long, value_name = "SPECS")]
+    pub set: Option<String>,
+    /// Remove the queue's limits.
+    #[arg(long)]
+    pub clear: bool,
+    /// Print JSON.
     #[arg(long)]
     pub json: bool,
 }

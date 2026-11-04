@@ -27,7 +27,7 @@
 //! | [`unique_lock`]`(digest)`, [`UNIQUE_LOCKS`] | HASH, ZSET | unique-job locks and their index |
 //! | [`PERIODIC`], [`PERIODIC_NAMES`], [`periodic`]`(name)`, [`periodic_history`]`(name)`, [`periodic_group`]`(group)`, [`PERIODIC_CRONTABS`] | ZSET, ZSET, HASH, LIST, SET, HASH | periodic schedules |
 //! | [`batch`]`(bid)` and its sets, [`BATCHES`], [`BATCH_EVENTS`], [`BATCH_MAINTENANCE`] | HASH, SET, ZSET, ZSET, STRING | batches |
-//! | [`limit_state`]`(kind, id)`, [`limit_stats`]`(kind, id)`, [`LIMITS`], [`QUEUE_LIMITS`] (reserved) | ZSET/LIST/HASH/STRING, HASH, ZSET, HASH | limiters |
+//! | [`limit_state`]`(kind, id)`, [`limit_stats`]`(kind, id)`, [`LIMITS`], [`QUEUE_LIMITS`] | ZSET/LIST/HASH/STRING, HASH, ZSET, HASH | limiters |
 //! | [`unique_minute`]`(at)`, [`batch_minute`]`(at)`, [`limit_minute`]`(at)` | HASH | per-minute feature counters |
 //!
 //! The keys of the features follow one policy ([pro-features.md] §2.1): every
@@ -432,9 +432,9 @@ pub fn limit_minute(at: DateTime<Utc>) -> String {
     feature_minute('l', at)
 }
 
-/// Reserved for queue limits (a hash: queue name → specs, configuration), which come in a later
-/// version: this one neither reads nor writes it (the worker file's `[queue_limits]` table is
-/// refused).
+/// HASH of queue limits: queue name → its limits in their stored form
+/// (`concurrency=3;window=100/1m`; see [`crate::api::Queue::set_limits`]). Configuration: no
+/// expiry. The state of a queue's limits lives under the limiter name `@<queue>`.
 pub const QUEUE_LIMITS: &str = "queue-limits";
 
 #[cfg(test)]

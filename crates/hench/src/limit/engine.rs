@@ -96,8 +96,8 @@ pub(crate) mod holds {
     }
 }
 
-/// The concurrency permits the engine holds for its running throttled jobs, by processor slot
-/// (tid). A renewal holds the map for its round trip, so that a permit released meanwhile is
+/// The concurrency permits the engine holds for its running jobs (a throttle's, and a queue
+/// limit's), by processor slot (tid). A renewal holds the map for its round trip, so that a permit released meanwhile is
 /// not taken back by it.
 #[derive(Debug, Default)]
 pub(crate) struct HeldPermits {
@@ -107,21 +107,23 @@ pub(crate) struct HeldPermits {
 /// One lease the engine holds for a running job.
 #[derive(Debug, Clone)]
 pub(crate) struct HeldPermit {
-    /// The lease (token: the execution's, see [`execution_token`]).
+    /// The lease (token: the execution's for a throttle, see [`execution_token`]; the fetch's
+    /// for a queue limit).
     pub(crate) lease: LeaseRef,
-    /// The throttle it was granted by (for logs).
-    pub(crate) throttle: String,
+    /// What granted it: the throttle's name, or `@<queue>` for a queue's limits (for logs).
+    pub(crate) owner: String,
     /// When it was granted (this process's clock), for the throttle's average hold time.
     pub(crate) granted: Instant,
 }
 
 impl HeldPermits {
-    /// Registers the leases of slot `tid`'s job.
-    pub(crate) async fn hold(&self, tid: &str, leases: Vec<LeaseRef>, throttle: &str) {
+    /// Registers the leases of slot `tid`'s job, granted by `owner` (a throttle's name, or
+    /// `@<queue>`).
+    pub(crate) async fn hold(&self, tid: &str, leases: Vec<LeaseRef>, owner: &str) {
         let granted = Instant::now();
         let permits = leases.into_iter().map(|lease| HeldPermit {
             lease,
-            throttle: throttle.to_owned(),
+            owner: owner.to_owned(),
             granted,
         });
         self.slots
@@ -396,13 +398,16 @@ pub(crate) async fn release_slots(engine: &Engine, tids: &[String]) {
         return;
     }
     // One hold time per execution and throttle (an execution holds one lease per concurrency
-    // limit of its throttle, all with its token).
+    // limit of its throttle, all with its token). Queue limits keep no wait line.
     let mut recorded: Vec<(&str, &str)> = Vec::new();
-    for permit in &held {
-        let key = (permit.throttle.as_str(), permit.lease.token.as_str());
+    for permit in held
+        .iter()
+        .filter(|permit| !permit.owner.starts_with(crate::limit::queue::PREFIX))
+    {
+        let key = (permit.owner.as_str(), permit.lease.token.as_str());
         if !recorded.contains(&key) {
             recorded.push(key);
-            holds::record(&permit.throttle, permit.granted.elapsed());
+            holds::record(&permit.owner, permit.granted.elapsed());
         }
     }
     let leases: Vec<LeaseRef> = held.iter().map(|permit| permit.lease.clone()).collect();
@@ -410,20 +415,20 @@ pub(crate) async fn release_slots(engine: &Engine, tids: &[String]) {
         Ok(results) => {
             for (permit, result) in held.iter().zip(results) {
                 if result != ReleaseOutcome::Released
-                    && warn_now(&format!("late-release:{}", permit.throttle))
+                    && warn_now(&format!("late-release:{}", permit.owner))
                 {
                     tracing::warn!(
-                        throttle = %permit.throttle,
+                        by = %permit.owner,
                         limit = %permit.lease.state,
-                        "a throttled job finished after its lease ended (an overage): renewals \
-                         did not keep up"
+                        "a job finished after the lease of its permit ended (an overage): \
+                         renewals did not keep up"
                     );
                 }
             }
         }
         Err(error) => tracing::debug!(
             %error,
-            "could not release the permits of a throttled job; their leases end by themselves"
+            "could not release the permits of a job; their leases end by themselves"
         ),
     }
     for permit in &held {
@@ -486,7 +491,7 @@ impl Renewing<'_> {
             {
                 Ok(outcomes) => outcomes,
                 Err(error) => {
-                    tracing::debug!(%error, "could not renew the throttle permits; retrying next beat");
+                    tracing::debug!(%error, "could not renew the permits of running jobs; retrying next beat");
                     continue;
                 }
             };
@@ -494,21 +499,21 @@ impl Renewing<'_> {
                 match outcome {
                     RenewOutcome::Renewed => {}
                     RenewOutcome::Restored => {
-                        if warn_now(&format!("restored:{}", permit.throttle)) {
+                        if warn_now(&format!("restored:{}", permit.owner)) {
                             tracing::warn!(
-                                throttle = %permit.throttle,
+                                by = %permit.owner,
                                 limit = %permit.lease.state,
-                                "the lease of a running throttled job had ended; it was taken back"
+                                "the lease of a running job's permit had ended; it was taken back"
                             );
                         }
                     }
                     RenewOutcome::Lost => {
-                        if warn_now(&format!("lost:{}", permit.throttle)) {
+                        if warn_now(&format!("lost:{}", permit.owner)) {
                             tracing::warn!(
-                                throttle = %permit.throttle,
+                                by = %permit.owner,
                                 limit = %permit.lease.state,
-                                "the lease of a running throttled job was lost: its slot went \
-                                 to another job (an overage); the job keeps running"
+                                "the lease of a running job's permit was lost: its slot went to \
+                                 another job (an overage); the job keeps running"
                             );
                         }
                         lost.push((tid.clone(), *index));

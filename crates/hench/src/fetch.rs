@@ -31,6 +31,18 @@
 //! timeout: on every open queue (`BRPOP`) for basic fetch, on one queue (`BLMOVE`) for
 //! reliable fetch, rotating the queue each processor waits on so that every queue has waiters.
 //!
+//! **Queue limits** ([`crate::api::Queue::set_limits`]). A job leaves a limited queue only through
+//! `LIMIT_FETCH_GATE`, which checks and charges the queue's limits in the step that takes it, so
+//! the queue keeps its order. The blocking step never takes from a limited queue: one processor
+//! per process watches it (`BLMOVE` from the list to its own tail, which moves nothing) and,
+//! once a job arrives, fetches again through the gate; for basic fetch, that wait replaces the
+//! `BRPOP` of the unlimited queues for that turn (a job of an unlimited queue may then wait up
+//! to the fetch timeout, as with reliable fetch's rotation). A queue over its limits is left out
+//! of the process's fetches until a unit frees, and then checked by a single fetch; one
+//! processor times each cooldown, and processors with nothing else to wait on sleep, woken one
+//! at a time while a limited queue keeps granting jobs. Nothing but changed limits wakes them
+//! all, so the Redis calls do not grow with the idle processors.
+//!
 //! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
 //
 // LANE: engine — this module is owned by the engine lane.
@@ -42,6 +54,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use ::redis::Script;
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 mod poison;
@@ -50,6 +63,8 @@ use crate::client::Stored;
 use crate::config::{CapsuleConfig, Config, FetchStrategy, QueueMode};
 use crate::error::{Error, Result};
 use crate::keys;
+use crate::limit::queue::{self, Admission, Gated, QueueLimits, QueuePermit, Snapshot};
+use crate::limit::scripts::Acquired;
 use crate::payload::JobPayload;
 use crate::redis::{RedisConnection, RedisPool};
 use crate::retry::MorgueBounds;
@@ -272,10 +287,21 @@ static KEEP_RECOVERY_LOCK_SCRIPT: LazyLock<Script> =
 
 /// A fetched job: the queue it came from and its JSON, byte for byte as stored in Redis
 /// (acknowledging and requeueing need the exact bytes). Cheap to clone: the bytes are shared.
+///
+/// A job fetched from a queue with a concurrency limit (see [`Api::queue`]'s
+/// [`set_limits`](crate::api::Queue::set_limits)) also holds one of the queue's slots until
+/// it is released: a running process releases it once the job's outcome is written; a tool
+/// fetching with its own [`Fetcher`] releases it with [`Fetcher::release_limits`] once the job
+/// is handled ([`Fetcher::acknowledge`] and [`Fetcher::requeue`] do not). Nothing renews a
+/// tool's slot: its lease ends a minute after the fetch, whether the job is done or not.
+///
+/// [`Api::queue`]: crate::api::Api::queue
 #[derive(Clone, PartialEq, Eq)]
 pub struct UnitOfWork {
     queue: String,
     job: Arc<Vec<u8>>,
+    /// The queue limits' permits of the fetch (limited queues only).
+    permit: Option<Arc<QueuePermit>>,
 }
 
 impl UnitOfWork {
@@ -284,7 +310,19 @@ impl UnitOfWork {
         Self {
             queue: queue_key.into(),
             job: Arc::new(job.into()),
+            permit: None,
         }
+    }
+
+    /// This unit of work, holding `permit` (granted by its queue's limits).
+    fn with_permit(mut self, permit: QueuePermit) -> Self {
+        self.permit = Some(Arc::new(permit));
+        self
+    }
+
+    /// The permits its queue's limits granted the fetch (`None` for an unlimited queue).
+    pub(crate) fn queue_permit(&self) -> Option<&QueuePermit> {
+        self.permit.as_deref()
     }
 
     /// The job's bytes, shared (for the work state and the jobs held by a process).
@@ -320,10 +358,14 @@ impl UnitOfWork {
 
 impl fmt::Debug for UnitOfWork {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("UnitOfWork")
+        let mut debug = f.debug_struct("UnitOfWork");
+        debug
             .field("queue", &self.queue)
-            .field("job", &self.job_str())
-            .finish()
+            .field("job", &self.job_str());
+        if let Some(permit) = &self.permit {
+            debug.field("permit", permit);
+        }
+        debug.finish()
     }
 }
 
@@ -483,11 +525,18 @@ struct FetcherInner {
     mode: QueueMode,
     names: Vec<String>,
     keys: Vec<String>,
+    /// The index of each queue key in `keys` and `names`.
+    key_index: HashMap<String, usize>,
     weights: Vec<u64>,
     timeout: Duration,
     /// How long an owner without a heartbeat key must stay without one before its jobs are
     /// recovered (see [`Fetcher::with_orphan_grace`]).
     orphan_grace: Duration,
+    /// The process's view of the queue limits, with its cooldowns.
+    queue_limits: Arc<QueueLimits>,
+    /// Wakes one sleeping worker of the capsule after a job was taken from a limited queue (it
+    /// may have more), so that idle workers come one by one rather than all at once.
+    wake: Arc<Notify>,
 }
 
 impl Fetcher {
@@ -502,7 +551,12 @@ impl Fetcher {
     ) -> Self {
         let identity = identity.into();
         let names: Vec<String> = capsule.queues.clone();
-        let keys = names.iter().map(|name| keys::queue(name)).collect();
+        let keys: Vec<String> = names.iter().map(|name| keys::queue(name)).collect();
+        let key_index = keys
+            .iter()
+            .enumerate()
+            .map(|(index, key)| (key.clone(), index))
+            .collect();
         let weights = names
             .iter()
             .map(|name| {
@@ -513,7 +567,7 @@ impl Fetcher {
                     .map_or(1, |(_, weight)| u64::from((*weight).max(1)))
             })
             .collect();
-        Self {
+        let fetcher = Self {
             inner: Arc::new(FetcherInner {
                 strategy,
                 redis,
@@ -523,11 +577,56 @@ impl Fetcher {
                 mode: capsule.mode,
                 names,
                 keys,
+                key_index,
                 weights,
                 timeout: DEFAULT_TIMEOUT,
                 orphan_grace: Duration::ZERO,
+                queue_limits: Arc::new(QueueLimits::new(
+                    queue::STANDALONE_REFRESH,
+                    crate::limit::Throttle::LEASE,
+                )),
+                wake: Arc::new(Notify::new()),
             }),
+        };
+        fetcher.register();
+        fetcher
+    }
+
+    /// Registers the capsule's waker with its cooldowns, for each of its queues.
+    fn register(&self) {
+        let inner = &self.inner;
+        inner
+            .queue_limits
+            .cooldowns()
+            .register(inner.names.iter().map(String::as_str), &inner.wake);
+    }
+
+    /// Shares a process's view of the queue limits (refreshed by its heartbeat) and their
+    /// cooldowns, instead of this fetcher's own.
+    #[must_use]
+    pub(crate) fn with_queue_limits(mut self, limits: Arc<QueueLimits>) -> Self {
+        Arc::make_mut(&mut self.inner).queue_limits = limits;
+        self.register();
+        self
+    }
+
+    /// Releases the slots a job holds in its queue's concurrency limit (see [`UnitOfWork`]):
+    /// for tools fetching with their own fetcher, once the job is handled. A running process
+    /// releases its jobs' slots itself. Does nothing for a job of an unlimited queue.
+    pub async fn release_limits(&self, work: &UnitOfWork) -> Result<()> {
+        let Some(permit) = work.queue_permit() else {
+            return Ok(());
+        };
+        if !permit.leases.is_empty() {
+            crate::limit::scripts::release(&self.inner.redis, &permit.leases, None).await?;
         }
+        self.slot_freed(&permit.queue);
+        Ok(())
+    }
+
+    /// This process freed a slot of `queue`'s concurrency limit: its cooldown ends.
+    pub(crate) fn slot_freed(&self, queue: &str) {
+        self.inner.queue_limits.cooldowns().freed(queue);
     }
 
     /// Sets how long a fetch blocks waiting for a job when every queue is empty (at least one
@@ -593,11 +692,13 @@ impl Fetcher {
             index,
             turn: 0,
             conn: None,
+            id: self.inner.queue_limits.cooldowns().fetch_id(),
         }
     }
 
     /// Marks a job as handled. Reliable fetch removes it from the in-progress list (searching
-    /// from the tail, where the oldest jobs are); basic fetch has nothing to do.
+    /// from the tail, where the oldest jobs are); basic fetch has nothing to do. The slot of a
+    /// limited queue the job holds is released apart ([`Fetcher::release_limits`]).
     pub async fn acknowledge(&self, work: &UnitOfWork) -> Result<()> {
         if self.inner.strategy == FetchStrategy::Basic {
             return Ok(());
@@ -683,7 +784,8 @@ impl Fetcher {
 
     /// Puts a job back at the front of its queue (it is the next one fetched). With reliable
     /// fetch the job moves atomically out of the in-progress list, and nothing is pushed if
-    /// it is no longer there.
+    /// it is no longer there. The slot of a limited queue the job holds is released apart
+    /// ([`Fetcher::release_limits`]).
     pub async fn requeue(&self, work: &UnitOfWork) -> Result<()> {
         self.bulk_requeue(std::slice::from_ref(work))
             .await
@@ -1044,14 +1146,39 @@ pub struct FetchWorker {
     turn: usize,
     /// Dedicated connection for `BRPOP`/`BLMOVE`, opened on first use.
     conn: Option<RedisConnection>,
+    /// This worker's id among the process's fetches (for the probes and watches of limited
+    /// queues, see [`Cooldowns`](crate::limit::queue::Cooldowns)).
+    id: u64,
+}
+
+/// What the blocking step of a fetch waits on.
+enum Blocking<'a> {
+    /// Takes the next job of these queues (keys) as it arrives: `BRPOP` (basic fetch) or
+    /// `BLMOVE` into the in-progress list (reliable fetch, one queue).
+    Take(Vec<&'a str>),
+    /// Watches an empty limited queue (key) without taking its job: a job leaves a limited queue
+    /// only through `LIMIT_FETCH_GATE`, so that its jobs keep their order.
+    Watch(&'a str, queue::Watch<'a>),
 }
 
 /// What the non-blocking step of a fetch found.
 enum Attempt {
     Found(UnitOfWork),
-    /// Every queue was empty; these queue keys are not paused.
-    Empty(Vec<String>),
+    /// No job: `open` lists the queue keys the blocking step may wait on (neither paused nor
+    /// cooling down); `cooling_until` is when to try again at the latest (queue limits that keep
+    /// changing; the cooldowns are read apart).
+    Empty {
+        open: Vec<String>,
+        cooling_until: Option<Instant>,
+    },
 }
+
+/// How many times one fetch re-reads queue limits that changed under it before giving up until
+/// the next fetch.
+const MAX_STALE_RETRIES: usize = 3;
+
+/// The shortest wait of a blocking step shortened by a cooldown (Redis takes 0 as "forever").
+const MIN_BLOCK: Duration = Duration::from_millis(10);
 
 impl FetchWorker {
     /// Fetches the next job, waiting up to the fetch timeout when every queue is empty.
@@ -1072,73 +1199,166 @@ impl FetchWorker {
     }
 
     async fn retrieve(&mut self, cancel: Option<&CancellationToken>) -> Result<Option<UnitOfWork>> {
-        let order = self.fetcher.order();
-        let open = match self.attempt(&order).await? {
-            Attempt::Found(work) => return Ok(Some(work)),
-            Attempt::Empty(open) => open,
+        // A fetch dropped before it completes (a caller's timeout around `retrieve_work`) hands
+        // on the cooldowns this worker was timing while it waited.
+        let dropped = Untime {
+            inner: Arc::clone(&self.fetcher.inner),
+            id: self.id,
+            armed: true,
         };
+        let fetched = self.fetch_once(cancel).await;
+        dropped.disarm();
+        if fetched.is_err() {
+            // The processor pauses after a failed fetch: another worker takes over the
+            // cooldowns this one timed (and a probe the failure dropped).
+            self.stop_timing();
+        }
+        fetched
+    }
+
+    async fn fetch_once(
+        &mut self,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<Option<UnitOfWork>> {
+        let order = self.fetcher.order();
+        // Read before looking at the queues: a wake-up after this one is not missed.
+        let generation = self.fetcher.inner.queue_limits.cooldowns().generation();
+        let (open, retry_at) = match self.attempt(&order).await? {
+            Attempt::Found(work) => {
+                self.stop_timing();
+                return Ok(Some(work));
+            }
+            Attempt::Empty {
+                open,
+                cooling_until,
+            } => (open, cooling_until),
+        };
+        // The first of the capsule's queues left out for its limits to come back (each
+        // cooldown is timed by one worker of the process).
+        let inner = &self.fetcher.inner;
+        let cooling_until = inner
+            .queue_limits
+            .cooldowns()
+            .next_end(
+                self.id,
+                inner.names.iter().map(String::as_str),
+                Instant::now(),
+            )
+            .into_iter()
+            .chain(retry_at)
+            .min();
         let timeout = self.fetcher.inner.timeout;
-        if open.is_empty() {
-            // Every queue is paused: wait before checking again.
+        // A queue left out for its limits comes back before the timeout: wait no longer.
+        let wait = cooling_until.map_or(timeout, |at| {
+            at.saturating_duration_since(Instant::now())
+                .clamp(MIN_BLOCK, timeout.max(MIN_BLOCK))
+                .min(timeout)
+        });
+        let fetcher = self.fetcher.clone();
+        let inner = &fetcher.inner;
+        let snapshot = inner.queue_limits.current();
+        let Some(blocking) = blocking(
+            &fetcher,
+            self.index.wrapping_add(self.turn),
+            self.id,
+            &open,
+            &snapshot,
+        ) else {
+            // Every queue is paused, over its limits, or watched by another worker of the
+            // process: wait before checking again (woken early by another worker of the capsule
+            // that took a job and left room, or when limits change).
+            let cooldowns = inner.queue_limits.cooldowns();
+            let changed = cooldowns.notified();
+            let woken = inner.wake.notified();
+            if cooldowns.generation() != generation {
+                return Ok(None);
+            }
+            let pause = async {
+                tokio::select! {
+                    () = tokio::time::sleep(wait) => {}
+                    () = changed => {}
+                    () = woken => {}
+                }
+            };
             match cancel {
                 Some(cancel) => {
-                    let _ = cancel
-                        .run_until_cancelled(tokio::time::sleep(timeout))
-                        .await;
+                    let _ = cancel.run_until_cancelled(pause).await;
                 }
-                None => tokio::time::sleep(timeout).await,
+                None => pause.await,
             }
             return Ok(None);
-        }
+        };
+        self.turn = self.turn.wrapping_add(1);
         let Some(mut conn) = self.blocking_conn(cancel).await? else {
             return Ok(None);
         };
-        let block = timeout.as_secs_f64();
-        let result = match self.fetcher.inner.strategy {
-            FetchStrategy::Basic => {
-                let popped: ::redis::RedisResult<Option<(String, Vec<u8>)>> = ::redis::cmd("BRPOP")
-                    .arg(&open)
+        let block = wait.as_secs_f64();
+        let result = match blocking {
+            Blocking::Watch(key, watch) => {
+                // `BLMOVE` from a list to its own tail moves nothing: it returns once the queue
+                // has a job (or at the timeout), and the next fetch goes through the gate.
+                let watched: ::redis::RedisResult<Option<Vec<u8>>> = ::redis::cmd("BLMOVE")
+                    .arg(key)
+                    .arg(key)
+                    .arg("RIGHT")
+                    .arg("RIGHT")
                     .arg(block)
                     .query_async(&mut conn)
                     .await;
-                popped.map(|popped| popped.map(|(queue, job)| UnitOfWork::new(queue, job)))
+                drop(watch);
+                watched.map(|_| None)
             }
-            FetchStrategy::Reliable => {
-                // Spread the processors over the open queues, and move each one to the next
-                // queue every time it blocks, so that every queue has waiters.
-                let queue = &open[(self.index.wrapping_add(self.turn)) % open.len()];
-                self.turn = self.turn.wrapping_add(1);
-                // Registering the owner (which the script does atomically) rides in the same
-                // round trip: Redis runs the `SADD` once `BLMOVE` returns. Its errors are
-                // ignored, so that a job `BLMOVE` moved is never dropped because of it.
-                let replies: ::redis::RedisResult<Vec<::redis::RedisResult<Option<Vec<u8>>>>> =
-                    ::redis::pipe()
-                        .ignore_errors()
-                        .cmd("BLMOVE")
-                        .arg(queue)
-                        .arg(&self.fetcher.inner.inprogress)
-                        .arg("RIGHT")
-                        .arg("LEFT")
-                        .arg(block)
-                        .cmd("SADD")
-                        .arg(keys::INPROGRESS)
-                        .arg(&self.fetcher.inner.identity)
-                        .ignore()
-                        .query_async(&mut conn)
-                        .await;
-                let moved = replies.and_then(|replies| {
-                    replies.into_iter().next().unwrap_or_else(|| {
-                        Err(::redis::RedisError::from((
-                            ::redis::ErrorKind::UnexpectedReturnType,
-                            "no reply to BLMOVE",
-                        )))
-                    })
-                });
-                moved.map(|moved| moved.map(|job| UnitOfWork::new(queue.clone(), job)))
-            }
+            Blocking::Take(queues) => match inner.strategy {
+                FetchStrategy::Basic => {
+                    let popped: ::redis::RedisResult<Option<(String, Vec<u8>)>> =
+                        ::redis::cmd("BRPOP")
+                            .arg(&queues)
+                            .arg(block)
+                            .query_async(&mut conn)
+                            .await;
+                    popped.map(|popped| popped.map(|(queue, job)| UnitOfWork::new(queue, job)))
+                }
+                FetchStrategy::Reliable => {
+                    let queue = queues.first().copied().unwrap_or_default();
+                    // Registering the owner (which the script does atomically) rides in the same
+                    // round trip: Redis runs the `SADD` once `BLMOVE` returns. Its errors are
+                    // ignored, so that a job `BLMOVE` moved is never dropped because of it.
+                    let replies: ::redis::RedisResult<Vec<::redis::RedisResult<Option<Vec<u8>>>>> =
+                        ::redis::pipe()
+                            .ignore_errors()
+                            .cmd("BLMOVE")
+                            .arg(queue)
+                            .arg(&inner.inprogress)
+                            .arg("RIGHT")
+                            .arg("LEFT")
+                            .arg(block)
+                            .cmd("SADD")
+                            .arg(keys::INPROGRESS)
+                            .arg(&inner.identity)
+                            .ignore()
+                            .query_async(&mut conn)
+                            .await;
+                    let moved = replies.and_then(|replies| {
+                        replies.into_iter().next().unwrap_or_else(|| {
+                            Err(::redis::RedisError::from((
+                                ::redis::ErrorKind::UnexpectedReturnType,
+                                "no reply to BLMOVE",
+                            )))
+                        })
+                    });
+                    moved.map(|moved| moved.map(|job| UnitOfWork::new(queue.to_owned(), job)))
+                }
+            },
         };
         match result {
-            Ok(work) => Ok(work),
+            Ok(Some(work)) => {
+                let admitted = self.admit(work).await?;
+                if admitted.is_some() {
+                    self.stop_timing();
+                }
+                Ok(admitted)
+            }
+            Ok(None) => Ok(None),
             Err(error) => {
                 // Start over with a fresh connection (after a failover the old one may point
                 // at a replica).
@@ -1148,8 +1368,167 @@ impl FetchWorker {
         }
     }
 
-    /// The non-blocking step: one script call that takes the first available job.
+    /// The non-blocking step: one script call that takes the first available job. A capsule
+    /// whose queues have no limits uses the plain fetch scripts; otherwise the queues over
+    /// their limits (cooling down, or probed by another worker) are left out, and the others go
+    /// through `LIMIT_FETCH_GATE`.
     async fn attempt(&self, order: &[usize]) -> Result<Attempt> {
+        let inner = &self.fetcher.inner;
+        let limits = &inner.queue_limits;
+        limits.ensure_fresh(&inner.redis).await?;
+        let cooldowns = limits.cooldowns();
+        // Reported once the gate answers; dropped unreported (an error), they go to the next
+        // fetch.
+        let mut probes = cooldowns.probes(self.id);
+        for _ in 0..=MAX_STALE_RETRIES {
+            let snapshot = limits.current();
+            let now = Instant::now();
+            let mut queues = Vec::with_capacity(order.len());
+            let mut limited = false;
+            for &index in order {
+                let name = inner.names[index].as_str();
+                match snapshot.get(name) {
+                    // Stored limits that are not valid: the queue is not fetched.
+                    Some(entry) if entry.rules.is_none() => continue,
+                    Some(_) => {
+                        match cooldowns.admit(name, self.id, now) {
+                            Admission::Out => continue,
+                            Admission::Probe => probes.add(name),
+                            Admission::Open => {}
+                        }
+                        limited = true;
+                    }
+                    None => {}
+                }
+                queues.push(index);
+            }
+            if queues.is_empty() {
+                return Ok(Attempt::Empty {
+                    open: Vec::new(),
+                    cooling_until: None,
+                });
+            }
+            if !limited {
+                return self.plain_attempt(&queues).await;
+            }
+            let token = queue::token();
+            let args = queue::GateArgs {
+                inprogress: &inner.inprogress,
+                identity: &inner.identity,
+                reliable: inner.strategy == FetchStrategy::Reliable,
+                token: &token,
+                lease: limits.lease(),
+                queues: queues
+                    .iter()
+                    .map(|&index| queue::GateQueue {
+                        key: &inner.keys[index],
+                        name: &inner.names[index],
+                        entry: snapshot.get(&inner.names[index]),
+                    })
+                    .collect(),
+                now: None,
+            };
+            match queue::gate(&inner.redis, &args).await? {
+                Gated::Found {
+                    queue_key,
+                    job,
+                    token,
+                    now_ms,
+                    skipped,
+                    full,
+                } => {
+                    self.skipped(&mut probes, &skipped);
+                    // The grant used the queue's last unit: left out until it frees one, rather
+                    // than refused.
+                    if let Some(full) = &full {
+                        probes.cool(&full.queue, full.wait, full.busy);
+                    }
+                    let work = UnitOfWork::new(queue_key, job);
+                    // The gate reached the queues before the one it took from.
+                    let taken = work.queue_name().to_owned();
+                    let reached: Vec<&str> = queues
+                        .iter()
+                        .map(|&index| inner.names[index].as_str())
+                        .take_while(|&name| name != taken)
+                        .collect();
+                    let handed_on = probes.report(Some(&taken), |queue| reached.contains(&queue));
+                    let rules = snapshot.get(&taken).and_then(|entry| entry.rules.clone());
+                    // A probed queue this fetch did not reach goes to another worker.
+                    for queue in &handed_on {
+                        cooldowns.wake(queue);
+                    }
+                    return Ok(Attempt::Found(match (token, rules) {
+                        (Some(token), Some(rules)) => {
+                            // The queue may have more jobs, and room for them: a sleeping
+                            // worker comes for them.
+                            if full.is_none() {
+                                cooldowns.wake(&taken);
+                            }
+                            let permit = QueuePermit::granted(
+                                &taken,
+                                &rules,
+                                &token,
+                                limits.lease(),
+                                now_ms,
+                            );
+                            work.with_permit(permit)
+                        }
+                        _ => work,
+                    }));
+                }
+                Gated::Empty { open, skipped } => {
+                    self.skipped(&mut probes, &skipped);
+                    probes.report(None, |_| true);
+                    return Ok(Attempt::Empty {
+                        open,
+                        cooling_until: None,
+                    });
+                }
+                Gated::Stale(queue, skipped) => {
+                    self.skipped(&mut probes, &skipped);
+                    tracing::debug!(queue = %queue, "queue limits changed; reading them again");
+                    limits.refresh(&inner.redis).await?;
+                }
+            }
+        }
+        // The limits keep changing under this fetch: the next one tries again.
+        Ok(Attempt::Empty {
+            open: Vec::new(),
+            cooling_until: Some(Instant::now() + MIN_BLOCK),
+        })
+    }
+
+    /// This worker took a job, failed or ended: it no longer times the cooldowns it was waiting
+    /// for, and each of the capsule's queues now cooling with nobody timing or probing it gets a
+    /// sleeping worker of a capsule fetching it.
+    fn stop_timing(&self) {
+        stop_timing(&self.fetcher.inner, self.id);
+    }
+
+    /// Cools down the queues a gate call skipped. A queue whose limit state cannot be read is
+    /// closed for [`MAX_COOLDOWN`](queue::MAX_COOLDOWN) at a time, said once a minute.
+    fn skipped(&self, probes: &mut queue::Probes<'_>, skipped: &[queue::Skipped]) {
+        for skip in skipped {
+            if skip.broken {
+                if crate::limit::throttle::warn_now(&format!("broken-queue-limits:{}", skip.queue))
+                {
+                    tracing::error!(
+                        queue = %skip.queue,
+                        "the state of a limit of a queue cannot be read (a Redis key of the wrong \
+                         type): the queue is not fetched until it is reset (`hench limits \
+                         reset`, or delete its `limit:*:@<queue>` keys)"
+                    );
+                }
+                probes.cool(&skip.queue, queue::MAX_COOLDOWN, false);
+            } else {
+                probes.cool(&skip.queue, skip.wait, skip.busy);
+            }
+        }
+    }
+
+    /// The non-blocking step of the plain fetch scripts, over the queues `queues` (indexes, in
+    /// fetch order).
+    async fn plain_attempt(&self, queues: &[usize]) -> Result<Attempt> {
         let inner = &self.fetcher.inner;
         let mut invocation = match inner.strategy {
             FetchStrategy::Basic => {
@@ -1167,7 +1546,7 @@ impl FetchWorker {
                 invocation
             }
         };
-        for &index in order {
+        for &index in queues {
             invocation.key(&inner.keys[index]).arg(&inner.names[index]);
         }
         let invocation = &invocation;
@@ -1188,13 +1567,87 @@ impl FetchWorker {
                 job,
             )))
         } else {
-            Ok(Attempt::Empty(
-                values
+            Ok(Attempt::Empty {
+                open: values
                     .into_iter()
                     .map(|key| String::from_utf8_lossy(&key).into_owned())
                     .collect(),
-            ))
+                cooling_until: None,
+            })
         }
+    }
+
+    /// Admits a job the blocking step took: a job of an unlimited queue as it is; a job of a
+    /// limited queue once its limits grant it (`LIMIT_ACQUIRE`). Refused, the job goes back to
+    /// the front of its queue (`None`) and the queue cools down; if its limits cannot be
+    /// checked, it goes back too and the error is returned (like a failed fetch).
+    async fn admit(&self, work: UnitOfWork) -> Result<Option<UnitOfWork>> {
+        let fetcher = &self.fetcher;
+        let limits = &fetcher.inner.queue_limits;
+        let snapshot = limits.current();
+        let Some(entry) = snapshot.get(work.queue_name()) else {
+            return Ok(Some(work));
+        };
+        let Some(rules) = entry.rules.clone() else {
+            // Its stored limits are not valid: the queue is not fetched.
+            self.push_back(&work).await?;
+            return Ok(None);
+        };
+        let token = queue::token();
+        let checked =
+            queue::check_taken(&fetcher.inner.redis, &rules, &token, limits.lease()).await;
+        match checked {
+            Ok(Acquired::Granted { now_ms, .. }) => {
+                let permit =
+                    QueuePermit::granted(work.queue_name(), &rules, &token, limits.lease(), now_ms);
+                Ok(Some(work.with_permit(permit)))
+            }
+            Ok(Acquired::Refused {
+                wait_ms, limiting, ..
+            }) => {
+                let busy = rules
+                    .get(limiting)
+                    .is_some_and(|rule| rule.is_concurrency());
+                let wait = if busy {
+                    Duration::ZERO
+                } else {
+                    Duration::from_millis(wait_ms)
+                };
+                limits.cooldowns().cool(work.queue_name(), wait, busy);
+                self.push_back(&work).await?;
+                Ok(None)
+            }
+            Err(error) => {
+                // Logged by `push_back` if it fails too.
+                let _ = self.push_back(&work).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Pushes a job the blocking step took back to the front of its queue. If that fails, a
+    /// reliable fetch's job stays in progress (recovered later); a basic fetch's job is lost,
+    /// and logged in full.
+    async fn push_back(&self, work: &UnitOfWork) -> Result<()> {
+        let fetcher = &self.fetcher;
+        let pushed = fetcher.requeue(work).await;
+        if let Err(error) = &pushed {
+            match fetcher.inner.strategy {
+                FetchStrategy::Reliable => tracing::warn!(
+                    %error,
+                    queue = %work.queue_name(),
+                    "could not push a job back to its queue; it stays in progress and is \
+                     recovered later"
+                ),
+                FetchStrategy::Basic => tracing::error!(
+                    %error,
+                    queue = %work.queue_name(),
+                    job = %work.job_str(),
+                    "could not push a job back to its queue: it is lost"
+                ),
+            }
+        }
+        pushed
     }
 
     /// The dedicated blocking connection, opened if needed. `None` if `cancel` fired first.
@@ -1216,6 +1669,102 @@ impl FetchWorker {
         };
         self.conn = Some(conn.clone());
         Ok(Some(conn))
+    }
+}
+
+/// What the blocking step waits on, among the open queues `open` (keys, in fetch order):
+/// the workers of a capsule spread over the candidates, moving to the next one every time
+/// they block, so that every queue has waiters. The candidates are the unlimited queues
+/// (each one for reliable fetch, all of them together for basic fetch) and each limited
+/// queue no other worker of the process watches; `start` is the worker's turn. `None` when
+/// there is none.
+fn blocking<'a>(
+    fetcher: &'a Fetcher,
+    start: usize,
+    id: u64,
+    open: &'a [String],
+    snapshot: &Snapshot,
+) -> Option<Blocking<'a>> {
+    let inner = &fetcher.inner;
+    let name = |key: &str| {
+        inner
+            .key_index
+            .get(key)
+            .map(|&index| inner.names[index].as_str())
+    };
+    let limited = |key: &str| {
+        !snapshot.is_empty() && name(key).is_some_and(|name| snapshot.get(name).is_some())
+    };
+    // `None`: every unlimited queue together (basic fetch).
+    let mut candidates: Vec<Option<&'a str>> = Vec::with_capacity(open.len());
+    let mut together = false;
+    for key in open {
+        if limited(key) || inner.strategy == FetchStrategy::Reliable {
+            candidates.push(Some(key.as_str()));
+        } else if !together {
+            together = true;
+            candidates.push(None);
+        }
+    }
+    if candidates.is_empty() {
+        return None;
+    }
+    let cooldowns = inner.queue_limits.cooldowns();
+    for offset in 0..candidates.len() {
+        match candidates[start.wrapping_add(offset) % candidates.len()] {
+            None => {
+                let plain = open
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|key| !limited(key))
+                    .collect();
+                return Some(Blocking::Take(plain));
+            }
+            Some(key) if limited(key) => {
+                if let Some(watch) = cooldowns.watch(name(key).unwrap_or(key), id) {
+                    return Some(Blocking::Watch(key, watch));
+                }
+            }
+            Some(key) => return Some(Blocking::Take(vec![key])),
+        }
+    }
+    None
+}
+
+/// See [`FetchWorker::stop_timing`]: for the worker `id` of the capsule `inner`.
+fn stop_timing(inner: &FetcherInner, id: u64) {
+    let cooldowns = inner.queue_limits.cooldowns();
+    for queue in cooldowns.stop_timing(id, inner.names.iter().map(String::as_str)) {
+        cooldowns.wake(&queue);
+    }
+}
+
+/// Hands on a worker's cooldowns if a fetch is dropped before it completes.
+struct Untime {
+    inner: Arc<FetcherInner>,
+    id: u64,
+    armed: bool,
+}
+
+impl Untime {
+    /// The fetch completed: nothing to hand on here.
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for Untime {
+    fn drop(&mut self) {
+        if self.armed {
+            stop_timing(&self.inner, self.id);
+        }
+    }
+}
+
+impl Drop for FetchWorker {
+    /// A worker that ends (a processor that stopped or crashed) hands on the cooldowns it timed.
+    fn drop(&mut self) {
+        self.stop_timing();
     }
 }
 
@@ -1778,6 +2327,60 @@ mod redis_tests {
         assert_eq!(
             query::<usize>(&pool, ::redis::cmd("LLEN").arg(keys::queue("default"))).await,
             1
+        );
+    }
+
+    /// A worker whose fetch is dropped while it waits (a caller's timeout around
+    /// `retrieve_work`) hands on the cooldowns it timed: the next worker to wait times them.
+    #[tokio::test]
+    async fn a_dropped_fetch_hands_on_the_cooldowns_it_timed() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let () = query(
+            &pool,
+            ::redis::cmd("HSET")
+                .arg(keys::QUEUE_LIMITS)
+                .arg("default")
+                .arg("concurrency=1"),
+        )
+        .await;
+        for jid in ["0123456789abcdef0123456a", "0123456789abcdef0123456b"] {
+            let mut job = JobPayload::new("Held", vec![]);
+            job.queue = "default".into();
+            job.jid = jid.into();
+            let () = query(
+                &pool,
+                ::redis::cmd("LPUSH")
+                    .arg(keys::queue("default"))
+                    .arg(job.to_json().unwrap()),
+            )
+            .await;
+        }
+        let capsule = Config::default().capsules[0].clone();
+        let fetcher = Fetcher::new(
+            FetchStrategy::Reliable,
+            pool.clone(),
+            "host:1:abc",
+            &capsule,
+        )
+        .with_timeout(Duration::from_secs(2));
+        // The first job takes the only slot: the queue cools down.
+        let mut first = fetcher.worker(0);
+        let _held = first.retrieve_work().await.unwrap().unwrap();
+        // The second worker waits for it, timing the cooldown, until its caller gives up (its
+        // first wait ends at once: the grant left a cooldown nobody timed, and woke a worker).
+        let mut second = fetcher.worker(1);
+        let woken = tokio::time::timeout(Duration::from_millis(50), second.retrieve_work()).await;
+        assert!(matches!(woken, Ok(Ok(None))), "{woken:?}");
+        let waited = tokio::time::timeout(Duration::from_millis(50), second.retrieve_work()).await;
+        assert!(waited.is_err(), "the second worker waits");
+        let cooldowns = fetcher.inner.queue_limits.cooldowns();
+        let third = cooldowns.fetch_id();
+        assert!(
+            cooldowns
+                .next_end(third, ["default"], Instant::now())
+                .is_some(),
+            "the next worker times the cooldown"
         );
     }
 }

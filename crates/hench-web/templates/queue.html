@@ -23,6 +23,32 @@
     {% endif %}
   </header>
 
+  <section class="queue-limits" aria-labelledby="queue-limits-heading">
+    <h2 id="queue-limits-heading">{{ s.queue_limits }}</h2>
+    <p class="muted">{{ s.queue_limits_help }}</p>
+    {% if let Some(limits) = limits %}
+    <p>
+      <span class="chip{% if limits_invalid %} chip-warn{% endif %}">{{ limits }}</span>
+      {% for (letter, href) in limit_links %}<a href="{{ href }}">{{ s.limit_usage }} ({{ letter }})</a> {% endfor %}
+    </p>
+    {% if limits_invalid %}<div class="notice notice-warning" role="status">{{ s.invalid_queue_limits }}</div>{% endif %}
+    {% else %}
+    <p>{{ s.no_queue_limits }}</p>
+    {% endif %}
+    {% if !layout.read_only %}
+    <form method="post" action="{{ queue_url }}" class="button-row">
+      <input type="hidden" name="_csrf" value="{{ layout.csrf }}">
+      <input type="hidden" name="return_to" value="queue">
+      <label for="queue-limits-input">{{ s.queue_limits_label }}</label>
+      <input type="text" id="queue-limits-input" name="limits" value="{{ limits_value }}" placeholder="{{ s.queue_limits_placeholder }}" maxlength="500" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn" name="set_limits" value="1">{{ s.set_limits }}</button>
+      {% if limits.is_some() %}
+      <button type="submit" class="btn btn-warn" name="clear_limits" value="1" data-confirm="{{ s.confirm_clear_limits }}">{{ s.clear_limits }}</button>
+      {% endif %}
+    </form>
+    {% endif %}
+  </section>
+
   <div class="toolbar">
     <nav class="segmented" aria-label="{{ s.position }}">
       <a href="{{ newest_href }}"{% if !ascending %} aria-current="true"{% endif %}>{{ s.newest_first }}</a>

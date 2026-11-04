@@ -48,7 +48,8 @@ impl Manager {
             engine.identity.clone(),
             capsule,
         )
-        .with_timeout(engine.config.fetch_timeout);
+        .with_timeout(engine.config.fetch_timeout)
+        .with_queue_limits(engine.queue_limits.clone());
         let tracker = TaskTracker::new();
         let slots: Vec<Slot> = (0..capsule.concurrency).map(|_| Slot::default()).collect();
         let tids: Vec<String> = slots.iter().map(|_| next_tid()).collect();

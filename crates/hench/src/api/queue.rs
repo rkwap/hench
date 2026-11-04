@@ -1,13 +1,16 @@
 //! [`Queue`]: one job queue.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use futures::Stream;
 
 use crate::api::page::{list_page, normalize};
 use crate::api::{Api, JobRecord, Page, SortOrder, batched, json_escaped, latency_of_raw};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::keys;
+use crate::limit::Limit;
+use crate::limit::queue as queue_limits;
 use crate::redis::RedisPool;
 
 /// Jobs fetched per round trip while iterating a queue.
@@ -80,9 +83,10 @@ impl Queue {
         Ok(oldest.as_deref().map_or(0.0, latency_of_raw))
     }
 
-    /// `true` if the queue is known: it is in the `queues` set, holds jobs, or is paused (a
-    /// queue can be paused before its first job). One round trip. A queue that was
-    /// [`clear`](Self::clear)ed and is not paused no longer exists.
+    /// `true` if the queue is known: it is in the `queues` set, holds jobs, or is paused or
+    /// limited (a queue can be paused or limited before its first job). One round trip. A
+    /// queue that was [`clear`](Self::clear)ed and is neither paused nor limited no longer
+    /// exists.
     pub async fn exists(&self) -> Result<bool> {
         let mut pipe = ::redis::pipe();
         pipe.cmd("SISMEMBER")
@@ -92,14 +96,17 @@ impl Queue {
             .arg(&self.key)
             .cmd("SISMEMBER")
             .arg(keys::PAUSED)
+            .arg(&self.name)
+            .cmd("HEXISTS")
+            .arg(keys::QUEUE_LIMITS)
             .arg(&self.name);
         let pipe = &pipe;
-        let (known, stored, paused): (bool, bool, bool) = self
+        let (known, stored, paused, limited): (bool, bool, bool, bool) = self
             .api
             .redis()
             .with_retry(|mut conn| async move { pipe.query_async(&mut conn).await })
             .await?;
-        Ok(known || stored || paused)
+        Ok(known || stored || paused || limited)
     }
 
     /// `true` if the queue is in the `paused` set.
@@ -251,8 +258,127 @@ impl Queue {
         }
     }
 
+    /// The limits on every fetch of the queue (see [`set_limits`](Self::set_limits)); empty
+    /// when it has none. Fails with [`Error::Config`] when its stored limits are not valid
+    /// (workers then leave the queue alone until they are set again or cleared).
+    pub async fn limits(&self) -> Result<Vec<Limit>> {
+        let name = &self.name;
+        match self.stored_limits().await? {
+            None => Ok(Vec::new()),
+            Some(text) => queue_limits::parse(name, &text).map_err(|error| {
+                let reason = match error {
+                    Error::Config(reason) => reason,
+                    other => other.to_string(),
+                };
+                Error::Config(format!(
+                    "the stored limits of the queue `{}` (`{}`) are not valid: {reason}",
+                    name.escape_debug(),
+                    text.escape_debug()
+                ))
+            }),
+        }
+    }
+
+    /// Limits every fetch of the queue, replacing its limits: concurrency, window, bucket and
+    /// leaky limits, at most one of each kind (see [`crate::limit::Limit`]). A queue over its
+    /// limits is skipped like a paused one: its jobs keep their order and the other queues keep
+    /// flowing. Every process applies the new limits within a heartbeat interval (10 s by
+    /// default); a process that starts with limits for the queue in its configuration
+    /// (`HenchBuilder::queue_limits`, the worker file's `[queue_limits]`) writes its own back.
+    ///
+    /// Returns the limits as stored: each limit's spec in the long form, in the order
+    /// concurrency, window, bucket, leaky, joined by `;` (`concurrency=3;window=100/1m`).
+    ///
+    /// Fails with [`Error::Config`] for an empty list, a points limit, two limits of one kind or
+    /// an invalid limit.
+    pub async fn set_limits(&self, limits: &[Limit]) -> Result<String> {
+        queue_limits::check(&self.name, limits)?;
+        let name = &self.name;
+        let stored = queue_limits::stored_form(limits);
+        let value = &stored;
+        self.api
+            .redis()
+            .with_retry(|mut conn| async move {
+                ::redis::cmd("HSET")
+                    .arg(keys::QUEUE_LIMITS)
+                    .arg(name)
+                    .arg(value)
+                    .exec_async(&mut conn)
+                    .await
+            })
+            .await?;
+        Ok(stored)
+    }
+
+    /// [`set_limits`](Self::set_limits) with limits written in the spec grammar, joined by
+    /// `;` (`"concurrency=3; window=100/1m"`, see [`crate::limit`]): for limits typed by
+    /// people (the dashboard, the `hench` command). Returns the limits as stored.
+    pub async fn set_limits_from_str(&self, specs: &str) -> Result<String> {
+        let limits = queue_limits::parse(&self.name, specs)?;
+        self.set_limits(&limits).await
+    }
+
+    /// The queue's limits exactly as stored, valid or not (`None` without limits): what the
+    /// dashboard shows and lets people edit; [`limits`](Self::limits) parses them.
+    pub async fn stored_limits(&self) -> Result<Option<String>> {
+        let name = &self.name;
+        self.api
+            .redis()
+            .with_retry(|mut conn| async move {
+                ::redis::cmd("HGET")
+                    .arg(keys::QUEUE_LIMITS)
+                    .arg(name)
+                    .query_async(&mut conn)
+                    .await
+            })
+            .await
+    }
+
+    /// Removes the queue's limits: every process fetches it freely again within a heartbeat
+    /// interval. Returns `false` if it had none. The counters of its limits (`Api::limits`,
+    /// identities `<kind>:@<queue>`) stay until they expire.
+    pub async fn clear_limits(&self) -> Result<bool> {
+        let name = &self.name;
+        let removed: u64 = self
+            .api
+            .redis()
+            .with_retry(|mut conn| async move {
+                ::redis::cmd("HDEL")
+                    .arg(keys::QUEUE_LIMITS)
+                    .arg(name)
+                    .query_async(&mut conn)
+                    .await
+            })
+            .await?;
+        Ok(removed > 0)
+    }
+
+    /// The limits of every limited queue, by queue name, as stored: each queue's specs joined by
+    /// `;` (`concurrency=3;window=100/1m`); [`Queue::limits`] parses one.
+    pub async fn all_limits(api: impl Into<Api>) -> Result<BTreeMap<String, String>> {
+        let api = api.into();
+        let stored: Vec<(Vec<u8>, Vec<u8>)> = api
+            .redis()
+            .with_retry(|mut conn| async move {
+                ::redis::cmd("HGETALL")
+                    .arg(keys::QUEUE_LIMITS)
+                    .query_async(&mut conn)
+                    .await
+            })
+            .await?;
+        Ok(stored
+            .into_iter()
+            .map(|(queue, specs)| {
+                (
+                    String::from_utf8_lossy(&queue).into_owned(),
+                    String::from_utf8_lossy(&specs).into_owned(),
+                )
+            })
+            .collect())
+    }
+
     /// Deletes every job in the queue and forgets the queue (removes it from `queues`), in
-    /// one transaction.
+    /// one transaction. Its pause and its limits, set by name, stay.
     pub async fn clear(&self) -> Result<()> {
         let mut pipe = ::redis::pipe();
         pipe.atomic()

@@ -1070,3 +1070,526 @@ async fn the_in_memory_table_answers_like_redis() {
     )
     .await;
 }
+
+/// `LIMIT_FETCH_GATE` (queue limits' fetch, `docs/design/ratelimit.md` §3.2.12).
+mod fetch_gate {
+    use super::*;
+    use crate::limit::queue::{self, GateArgs, GateQueue, Gated, QueueEntry, Skipped};
+    use std::sync::Arc;
+
+    const INPROGRESS: &str = "host:1:abc:inprogress";
+    const IDENTITY: &str = "host:1:abc";
+
+    fn entry(queue: &str, specs: &str) -> QueueEntry {
+        let limits = queue::parse(queue, specs).unwrap();
+        QueueEntry {
+            stored: queue::stored_form(&limits),
+            rules: Some(Arc::from(queue::rules(queue, &limits))),
+        }
+    }
+
+    async fn store(pool: &RedisPool, queue: &str, entry: &QueueEntry) {
+        let _: i64 = command(
+            pool,
+            ::redis::cmd("HSET")
+                .arg(keys::QUEUE_LIMITS)
+                .arg(queue)
+                .arg(&entry.stored),
+        )
+        .await;
+    }
+
+    async fn push(pool: &RedisPool, queue: &str, jobs: &[&str]) {
+        for job in jobs {
+            let _: i64 = command(
+                pool,
+                ::redis::cmd("LPUSH").arg(keys::queue(queue)).arg(*job),
+            )
+            .await;
+        }
+    }
+
+    async fn gate(
+        pool: &RedisPool,
+        queues: &[(&str, Option<&QueueEntry>)],
+        token: &str,
+        reliable: bool,
+        now: i64,
+    ) -> Gated {
+        let keys: Vec<String> = queues.iter().map(|(name, _)| keys::queue(name)).collect();
+        let args = GateArgs {
+            inprogress: INPROGRESS,
+            identity: IDENTITY,
+            reliable,
+            token,
+            lease: Duration::from_secs(60),
+            queues: queues
+                .iter()
+                .zip(&keys)
+                .map(|((name, entry), key)| GateQueue {
+                    key,
+                    name,
+                    entry: *entry,
+                })
+                .collect(),
+            now: Some(now),
+        };
+        queue::gate(pool, &args).await.unwrap()
+    }
+
+    #[track_caller]
+    fn found(gated: &Gated) -> (&str, &[u8], Option<&str>) {
+        match gated {
+            Gated::Found {
+                queue_key,
+                job,
+                token,
+                ..
+            } => (queue_key, job, token.as_deref()),
+            other => panic!("expected a job, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn unlimited_queues_are_fetched_like_the_plain_script() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        // Nothing anywhere: every queue is open for the blocking step.
+        let gated = gate(&pool, &[("a", None), ("b", None)], "t", true, T0).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec!["queue:a".to_owned(), "queue:b".to_owned()],
+                skipped: vec![],
+            }
+        );
+        push(&pool, "b", &["b1", "b2"]).await;
+        push(&pool, "a", &["a1"]).await;
+        // In order: the first non-empty queue, its oldest job, to the in-progress list.
+        let gated = gate(&pool, &[("a", None), ("b", None)], "t", true, T0).await;
+        assert_eq!(found(&gated), ("queue:a", &b"a1"[..], None));
+        let gated = gate(&pool, &[("a", None), ("b", None)], "t", true, T0).await;
+        assert_eq!(found(&gated), ("queue:b", &b"b1"[..], None));
+        let inprogress: Vec<String> =
+            command(&pool, ::redis::cmd("LRANGE").arg(INPROGRESS).arg(0).arg(-1)).await;
+        assert_eq!(inprogress, ["b1", "a1"]);
+        let owners: Vec<String> =
+            command(&pool, ::redis::cmd("SMEMBERS").arg(keys::INPROGRESS)).await;
+        assert_eq!(owners, [IDENTITY]);
+        // Paused queues are skipped and not open.
+        let _: i64 = command(&pool, ::redis::cmd("SADD").arg(keys::PAUSED).arg("b")).await;
+        let gated = gate(&pool, &[("a", None), ("b", None)], "t", true, T0).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec!["queue:a".to_owned()],
+                skipped: vec![],
+            }
+        );
+        // Basic fetch pops, nothing in progress.
+        let _: i64 = command(&pool, ::redis::cmd("SREM").arg(keys::PAUSED).arg("b")).await;
+        let gated = gate(&pool, &[("b", None)], "t", false, T0).await;
+        assert_eq!(found(&gated), ("queue:b", &b"b2"[..], None));
+        let len: i64 = command(&pool, ::redis::cmd("LLEN").arg(INPROGRESS)).await;
+        assert_eq!(len, 2);
+        // No time read, nothing of the limiters written.
+        let keys: Vec<String> = command(&pool, ::redis::cmd("KEYS").arg("limit*")).await;
+        assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[tokio::test]
+    async fn a_changed_limit_is_reported_before_anything_is_taken() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        push(&pool, "exports", &["e1"]).await;
+        let believed = entry("exports", "c=2");
+        // The process believes limits Redis does not have.
+        let gated = gate(&pool, &[("exports", Some(&believed))], "t", true, T0).await;
+        assert_eq!(gated, Gated::Stale("exports".to_owned(), vec![]));
+        // Redis has limits the process does not know.
+        store(&pool, "exports", &entry("exports", "c=3")).await;
+        let gated = gate(&pool, &[("exports", None)], "t", true, T0).await;
+        assert_eq!(gated, Gated::Stale("exports".to_owned(), vec![]));
+        let gated = gate(&pool, &[("exports", Some(&believed))], "t", true, T0).await;
+        assert_eq!(gated, Gated::Stale("exports".to_owned(), vec![]));
+        let len: i64 = command(&pool, ::redis::cmd("LLEN").arg(keys::queue("exports"))).await;
+        assert_eq!(len, 1, "nothing taken");
+        // In agreement: fetched.
+        let current = entry("exports", "c=3");
+        let gated = gate(&pool, &[("exports", Some(&current))], "t", true, T0).await;
+        assert_eq!(found(&gated).0, "queue:exports");
+        // A paused queue is not even compared.
+        let _: i64 = command(&pool, ::redis::cmd("SADD").arg(keys::PAUSED).arg("exports")).await;
+        let gated = gate(&pool, &[("exports", Some(&believed))], "t", true, T0).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec![],
+                skipped: vec![]
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_full_concurrency_limit_skips_its_queue_and_serves_the_next() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let exports = entry("exports", "c=2");
+        store(&pool, "exports", &exports).await;
+        push(&pool, "exports", &["e1", "e2", "e3"]).await;
+        push(&pool, "default", &["d1"]).await;
+        let queues = [("exports", Some(&exports)), ("default", None)];
+        // Two grants, each with its fetch's token and a lease of a minute; the second says the
+        // limit is now full.
+        for (token, job) in [("t1", "e1"), ("t2", "e2")] {
+            let gated = gate(&pool, &queues, token, true, T0).await;
+            assert_eq!(
+                found(&gated),
+                ("queue:exports", job.as_bytes(), Some(token))
+            );
+            let Gated::Found { now_ms, full, .. } = gated else {
+                unreachable!()
+            };
+            assert_eq!(now_ms, T0);
+            let expected = (token == "t2").then(|| Skipped {
+                queue: "exports".to_owned(),
+                wait: Duration::ZERO,
+                busy: true,
+                broken: false,
+            });
+            assert_eq!(full, expected);
+        }
+        let rules = exports.rules.clone().unwrap();
+        let state = &rules[0].state;
+        let leases: Vec<(String, i64)> = command(
+            &pool,
+            ::redis::cmd("ZRANGE")
+                .arg(state)
+                .arg(0)
+                .arg(-1)
+                .arg("WITHSCORES"),
+        )
+        .await;
+        assert_eq!(
+            leases,
+            [
+                ("t1".to_owned(), T0 + 60_000),
+                ("t2".to_owned(), T0 + 60_000)
+            ]
+        );
+        // Full: the queue is skipped (its job stays first in line), the next queue served, and
+        // the skipped queue reported so that the process leaves it out for a while.
+        let gated = gate(&pool, &queues, "t3", true, T0 + 10).await;
+        assert_eq!(found(&gated), ("queue:default", &b"d1"[..], None));
+        let Gated::Found { skipped, .. } = &gated else {
+            unreachable!()
+        };
+        assert_eq!(
+            skipped,
+            &[Skipped {
+                queue: "exports".to_owned(),
+                wait: Duration::ZERO,
+                busy: true,
+                broken: false,
+            }]
+        );
+        let gated = gate(&pool, &queues, "t3", true, T0 + 10).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec!["queue:default".to_owned()],
+                skipped: vec![Skipped {
+                    queue: "exports".to_owned(),
+                    wait: Duration::ZERO,
+                    busy: true,
+                    broken: false,
+                }],
+            }
+        );
+        let left: Vec<String> = command(
+            &pool,
+            ::redis::cmd("LRANGE")
+                .arg(keys::queue("exports"))
+                .arg(0)
+                .arg(-1),
+        )
+        .await;
+        assert_eq!(left, ["e3"]);
+        // A released slot lets the next fetch in.
+        let released = scripts::release(&pool, &[lease(&rules[0], "t1", T0)], Some(T0 + 20))
+            .await
+            .unwrap();
+        assert_eq!(released, [ReleaseOutcome::Released]);
+        let gated = gate(&pool, &queues, "t4", true, T0 + 30).await;
+        assert_eq!(found(&gated), ("queue:exports", &b"e3"[..], Some("t4")));
+        // Counters: three grants, and two refusals (each fetch that found the queue full: the
+        // one that served `default` too), under `@exports`.
+        let counters = stats(&pool, &rules[0]).await;
+        assert_eq!(counters.get("g").map(String::as_str), Some("3"));
+        assert_eq!(counters.get("r").map(String::as_str), Some("2"));
+        assert_eq!(counters.get("p").map(String::as_str), Some("c|2"));
+        let events: HashMap<String, String> = command(
+            &pool,
+            ::redis::cmd("HGETALL").arg(keys::limit_minute(chrono::Utc::now())),
+        )
+        .await;
+        assert_eq!(events.get("@exports|g").map(String::as_str), Some("3"));
+        assert_eq!(events.get("@exports|r").map(String::as_str), Some("2"));
+        let indexed: Vec<String> = command(
+            &pool,
+            ::redis::cmd("ZRANGE").arg(keys::LIMITS).arg(0).arg(-1),
+        )
+        .await;
+        assert_eq!(indexed, ["c:@exports"]);
+    }
+
+    #[tokio::test]
+    async fn rate_limits_report_the_exact_wait_and_charge_all_or_none() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let reports = entry("reports", "c=10;w=2/1s");
+        store(&pool, "reports", &reports).await;
+        push(&pool, "reports", &["r1", "r2", "r3"]).await;
+        let queues = [("reports", Some(&reports))];
+        for (at, job) in [(0, "r1"), (400, "r2")] {
+            let gated = gate(&pool, &queues, &format!("t{at}"), false, T0 + at).await;
+            assert_eq!(found(&gated).1, job.as_bytes());
+            // The second grant fills the window until the first leaves it, 1000 ms after it.
+            let Gated::Found { full, .. } = gated else {
+                unreachable!()
+            };
+            assert_eq!(
+                full.map(|full| (full.wait, full.busy)),
+                (at == 400).then_some((Duration::from_millis(600), false))
+            );
+        }
+        // The window is full until the first grant leaves it, 1000 ms after it.
+        let gated = gate(&pool, &queues, "t", false, T0 + 500).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec![],
+                skipped: vec![Skipped {
+                    queue: "reports".to_owned(),
+                    wait: Duration::from_millis(500),
+                    busy: false,
+                    broken: false,
+                }],
+            }
+        );
+        // The refused fetch took no concurrency slot.
+        let rules = reports.rules.clone().unwrap();
+        let holders: i64 = command(&pool, ::redis::cmd("ZCARD").arg(&rules[0].state)).await;
+        assert_eq!(holders, 2);
+        let gated = gate(&pool, &queues, "t", false, T0 + 1_000).await;
+        assert_eq!(found(&gated).1, b"r3");
+        // Every key written expires.
+        for key in [
+            &rules[0].state,
+            &rules[0].stats,
+            &rules[1].state,
+            &rules[1].stats,
+        ] {
+            assert!(pttl(&pool, key).await > 0, "{key}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_empty_limited_queue_is_open_and_not_charged() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let exports = entry("exports", "c=1;l=5/1s");
+        store(&pool, "exports", &exports).await;
+        let gated = gate(&pool, &[("exports", Some(&exports))], "t", true, T0).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec!["queue:exports".to_owned()],
+                skipped: vec![],
+            }
+        );
+        let keys: Vec<String> = command(&pool, ::redis::cmd("KEYS").arg("limit*")).await;
+        assert!(keys.is_empty(), "{keys:?}");
+        // Paused before limits: a paused limited queue is neither checked nor open.
+        push(&pool, "exports", &["e1"]).await;
+        let _: i64 = command(&pool, ::redis::cmd("SADD").arg(keys::PAUSED).arg("exports")).await;
+        let gated = gate(&pool, &[("exports", Some(&exports))], "t", true, T0).await;
+        assert_eq!(
+            gated,
+            Gated::Empty {
+                open: vec![],
+                skipped: vec![]
+            }
+        );
+        let keys: Vec<String> = command(&pool, ::redis::cmd("KEYS").arg("limit*")).await;
+        assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[tokio::test]
+    async fn an_ended_lease_frees_its_slot_for_the_next_fetch() {
+        // A worker that crashed holding the only slot: its lease (a minute) ends, and the next
+        // fetch takes the slot back and counts the reclaimed lease.
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let exports = entry("exports", "c=1");
+        store(&pool, "exports", &exports).await;
+        push(&pool, "exports", &["e1", "e2"]).await;
+        let queues = [("exports", Some(&exports))];
+        let gated = gate(&pool, &queues, "crashed", true, T0).await;
+        assert_eq!(found(&gated).2, Some("crashed"));
+        assert!(matches!(
+            gate(&pool, &queues, "t", true, T0 + 59_999).await,
+            Gated::Empty { .. }
+        ));
+        let gated = gate(&pool, &queues, "next", true, T0 + 60_001).await;
+        assert_eq!(found(&gated), ("queue:exports", &b"e2"[..], Some("next")));
+        let rules = exports.rules.clone().unwrap();
+        let counters = stats(&pool, &rules[0]).await;
+        assert_eq!(counters.get("rc").map(String::as_str), Some("1"));
+        let holders: Vec<String> = command(
+            &pool,
+            ::redis::cmd("ZRANGE").arg(&rules[0].state).arg(0).arg(-1),
+        )
+        .await;
+        assert_eq!(holders, ["next"]);
+    }
+
+    #[tokio::test]
+    async fn every_kind_of_limit_is_enforced_at_the_fetch() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        for (specs, granted, wait) in [
+            // A bucket of 2 per second: its third job waits for the next second.
+            ("bucket=2/1s", 2, 1_000),
+            // A leaky bucket of 2 drained in a second: a burst of 2, then one every 500 ms.
+            ("leaky=2/1s", 2, 500),
+        ] {
+            let name = specs.split('=').next().unwrap();
+            let queue = format!("q-{name}");
+            let limits = entry(&queue, specs);
+            store(&pool, &queue, &limits).await;
+            push(&pool, &queue, &["a", "b", "c"]).await;
+            let queues = [(queue.as_str(), Some(&limits))];
+            for _ in 0..granted {
+                let gated = gate(&pool, &queues, "t", false, T0).await;
+                assert!(matches!(gated, Gated::Found { .. }), "{specs}: {gated:?}");
+            }
+            let gated = gate(&pool, &queues, "t", false, T0).await;
+            let Gated::Empty { skipped, .. } = gated else {
+                panic!("{specs}: expected a skip, got {gated:?}");
+            };
+            assert_eq!(skipped[0].wait, Duration::from_millis(wait), "{specs}");
+            assert!(!skipped[0].busy);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_gate_is_a_valid_feature_script() {
+        let source = crate::limit::lua::LIMIT_FETCH_GATE.source();
+        assert!(crate::lua::rule_violations(&source).is_empty());
+        assert_eq!(source.matches("hl_now(ARGV[1])").count(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_limit_state_of_the_wrong_type_closes_its_queue_alone() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let exports = entry("exports", "c=2;w=10/1m");
+        store(&pool, "exports", &exports).await;
+        push(&pool, "exports", &["e1"]).await;
+        push(&pool, "default", &["d1"]).await;
+        // The window's state is a list: make it a string.
+        let rules = exports.rules.clone().unwrap();
+        let window = &rules[1].state;
+        let _: () = command(&pool, ::redis::cmd("SET").arg(window).arg("oops")).await;
+        let queues = [("exports", Some(&exports)), ("default", None)];
+        let gated = gate(&pool, &queues, "t", true, T0).await;
+        assert_eq!(found(&gated), ("queue:default", &b"d1"[..], None));
+        let Gated::Found { skipped, .. } = &gated else {
+            unreachable!()
+        };
+        assert_eq!(
+            skipped,
+            &[Skipped {
+                queue: "exports".to_owned(),
+                wait: Duration::ZERO,
+                busy: false,
+                broken: true,
+            }]
+        );
+        // Nothing was taken or charged, and no refusal counted.
+        let left: i64 = command(&pool, ::redis::cmd("LLEN").arg(keys::queue("exports"))).await;
+        assert_eq!(left, 1);
+        let held: i64 = command(&pool, ::redis::cmd("ZCARD").arg(&rules[0].state)).await;
+        assert_eq!(held, 0);
+        let refused: Option<i64> =
+            command(&pool, ::redis::cmd("HGET").arg(&rules[0].stats).arg("r")).await;
+        assert_eq!(refused, None);
+        // Alone, it is reported as skipped too.
+        let gated = gate(&pool, &queues[..1], "t", true, T0).await;
+        assert!(
+            matches!(&gated, Gated::Empty { open, skipped } if open.is_empty() && skipped[0].broken),
+            "{gated:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_slots_of_a_failed_fetch_are_released_but_the_kept_one() {
+        let redis = TestRedis::start().await;
+        let pool = redis.pool().await;
+        let exports = entry("exports", "c=2");
+        let reports = entry("reports", "c=1;w=10/1s");
+        store(&pool, "exports", &exports).await;
+        store(&pool, "reports", &reports).await;
+        push(&pool, "exports", &["e1"]).await;
+        push(&pool, "reports", &["r1"]).await;
+        // One token granted on both queues (as a resent call could).
+        let both = [("exports", Some(&exports)), ("reports", Some(&reports))];
+        found(&gate(&pool, &both, "lost", true, T0).await);
+        found(&gate(&pool, &both[1..], "lost", true, T0).await);
+        let held = |rule: &crate::limit::rule::Rule| {
+            let state = rule.state.clone();
+            let pool = pool.clone();
+            async move {
+                let score: Option<f64> =
+                    command(&pool, ::redis::cmd("ZSCORE").arg(state).arg("lost")).await;
+                score.is_some()
+            }
+        };
+        let exports_slot = &exports.rules.as_deref().unwrap()[0];
+        let reports_slot = &reports.rules.as_deref().unwrap()[0];
+        assert!(held(exports_slot).await && held(reports_slot).await);
+        let keys: Vec<String> = both.iter().map(|(name, _)| keys::queue(name)).collect();
+        let args = GateArgs {
+            inprogress: INPROGRESS,
+            identity: IDENTITY,
+            reliable: true,
+            token: "lost",
+            lease: Duration::from_secs(60),
+            queues: both
+                .iter()
+                .zip(&keys)
+                .map(|((name, entry), key)| GateQueue {
+                    key,
+                    name,
+                    entry: *entry,
+                })
+                .collect(),
+            now: None,
+        };
+        // The job came from `reports`: the other slot goes back.
+        queue::release_unused(&pool, &args, Some("queue:reports")).await;
+        assert!(!held(exports_slot).await);
+        assert!(held(reports_slot).await);
+        // A failed call keeps none; releasing twice is harmless and counts nothing.
+        queue::release_unused(&pool, &args, None).await;
+        queue::release_unused(&pool, &args, None).await;
+        assert!(!held(reports_slot).await);
+        let overage: Option<i64> = command(
+            &pool,
+            ::redis::cmd("HGET").arg(&exports_slot.stats).arg("ov"),
+        )
+        .await;
+        assert_eq!(overage, None);
+    }
+}

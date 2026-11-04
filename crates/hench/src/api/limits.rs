@@ -77,9 +77,9 @@ pub struct LimitInfo {
     pub name: String,
     /// The key, for per-key limits.
     pub key: Option<String>,
-    /// The queue of a queue limit's state (ids `@<queue>`). Queue limits come in a later
-    /// version: this one creates no such state, so this is `None` unless a newer hench shares
-    /// the Redis.
+    /// The queue of a queue's limits (ids `@<queue>`, see
+    /// [`Queue::set_limits`](crate::api::Queue::set_limits)); `None` for a limiter's or a
+    /// throttle's.
     pub queue: Option<String>,
     /// The limit, read from the signature its last caller stored (`None` when unknown).
     pub spec: Option<Limit>,
@@ -165,10 +165,7 @@ impl LimitInfo {
                 .map_or(0, |value| u64::try_from(value).unwrap_or(0))
         };
         let millis = |field: &str| stats.get(field).and_then(|value| value.parse::<i64>().ok());
-        let (name, key) = match id.split_once(':') {
-            Some((name, key)) => (name, Some(key.to_owned())),
-            None => (id, None),
-        };
+        let (name, key) = split_id(id);
         Some(Self {
             kind,
             id: id.to_owned(),
@@ -640,9 +637,21 @@ pub(crate) fn split_member(member: &str) -> Option<(LimitKind, &str)> {
 
 /// `id` with its key as stored (hashed when longer than 128 bytes).
 fn stored_id(id: &str) -> String {
+    match split_id(id) {
+        (name, Some(key)) => rule::id(name, Some(&rule::stored_key(&key))),
+        (_, None) => id.to_owned(),
+    }
+}
+
+/// The name and key of an id: the first `:` separates them (names have none), except in a
+/// queue's limits (`@<queue>`), which have no key and keep every character of the queue's name.
+fn split_id(id: &str) -> (&str, Option<String>) {
+    if id.starts_with(crate::limit::queue::PREFIX) {
+        return (id, None);
+    }
     match id.split_once(':') {
-        Some((name, key)) => rule::id(name, Some(&rule::stored_key(key))),
-        None => id.to_owned(),
+        Some((name, key)) => (name, Some(key.to_owned())),
+        None => (id, None),
     }
 }
 

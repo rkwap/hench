@@ -16,6 +16,12 @@
 //! does not run and is parked in the schedule at its slot in the throttle's wait line, so that
 //! it neither holds a processor nor blocks the jobs behind it.
 //!
+//! **Queue limits** (`HenchBuilder::queue_limits`, `Api::queue(..).set_limits`) apply to every
+//! fetch of a queue, whatever its jobs: concurrency, window, bucket and leaky limits, checked
+//! and charged by the fetch itself. A queue over its limits is skipped like a paused one (its
+//! jobs stay in it, in order) while the other queues keep flowing. Their state lives under the
+//! reserved name `@<queue>` (`c:@exports`), next to the limiters'.
+//!
 //! Limits are written in a spec grammar (`concurrency=10`, `window=100/1s`, `bucket=10000/day`,
 //! `leaky=60/1m`, `points=1000/1m`, with `per key` for a throttle's per-key limits; see
 //! [`Limit`]), used by the configuration file, the dashboard and `#[hench::job(throttle(..))]`.
@@ -37,6 +43,7 @@ mod limiter;
 pub(crate) mod lua;
 pub(crate) mod memory;
 mod permit;
+pub(crate) mod queue;
 pub(crate) mod reschedule;
 pub(crate) mod rule;
 #[cfg(all(test, feature = "test-util"))]
@@ -72,6 +79,11 @@ pub(crate) use self::types::{OverLimitDecision, Reschedule};
 /// `features` map (older workers treat an [`OverLimit`] as a failure; the dashboard names them).
 pub(crate) const FORMAT: Option<u32> = Some(1);
 
+/// The version of queue limits this process enforces, for the heartbeat's `features` map under
+/// `queue_limits`: hench 0.1 advertises `limits` but ignores queue limits, so the dashboard
+/// names the processes without this key while some queue has limits.
+pub(crate) const QUEUE_FORMAT: Option<u32> = Some(1);
+
 /// The throttle step of `Client::normalize` (`docs/design/ratelimit.md` §2.4.4): the payload's
 /// `throttle` from the merged options. A throttle without a name is refused (a key alone means
 /// nothing), and so are invalid names; keys come from data and are never refused (one that
@@ -101,10 +113,14 @@ pub(crate) fn normalize(job: &mut JobPayload) -> Result<()> {
     }
 }
 
-/// Checks the throttles of a configuration (`Error::Config` naming the first invalid one): for
-/// the validation of `HenchBuilder::build` (`pro::validate`).
+/// Checks the throttles and queue limits of a configuration (`Error::Config` naming the first
+/// invalid one): for the validation of `HenchBuilder::build` (`pro::validate`).
 pub(crate) fn validate(config: &crate::config::Config) -> Result<()> {
-    throttle::validate_throttles(&config.throttles, config.heartbeat_interval)
+    throttle::validate_throttles(&config.throttles, config.heartbeat_interval)?;
+    for (queue, limits) in &config.queue_limits {
+        queue::check(queue, limits)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
