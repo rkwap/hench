@@ -3,12 +3,11 @@
 Tracks progress against `docs/DESIGN.md`. Update in the same commit as the work.
 Legend: `[ ]` todo · `[~]` in progress / partial · `[x]` done and tested.
 
-**Release state: 0.1.0 (2026-11-03), released from `main`.** The four crates are at 0.1.0,
-with `CHANGELOG.md` (its 0.1.0 entry: features, known limitations, requirements) and the
-roadmap (`docs/ROADMAP.md`); every gate passes (review log, release review round 4, and the
-release gate on `main`, with two timing-sensitive tests that failed once under load, see
-Remaining gaps). The owner makes the repository public, pushes the tag `v0.1.0` and
-publishes the crates in order (`docs/RELEASING.md`).
+**Release state: 0.1.0 (2026-11-03), published on crates.io and tagged `v0.1.0`.** The four
+crates are at 0.1.0, with `CHANGELOG.md` (its 0.1.0 entry: features, known limitations,
+requirements) and the roadmap (`docs/ROADMAP.md`); every gate passes (review log, release review round 4, and the
+release gate on `main`; two timing-sensitive tests that failed once under load have been fixed
+since). The repository is public.
 Phase 3 of the pro features (below) is deferred to 0.2 by the owner's decision and is not
 started.
 
@@ -353,13 +352,16 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
   ported); extensions bring no locales, views or assets of their own (their pages are HTML
   strings rendered in the layout, their assets routes of their own); no profiles page
   (Sidekiq 8's Vernier profiling).
-- Tests: two rate-limit tests depend on wall-clock timing and failed once each under a loaded
-  machine during the 0.1.0 release gate (each passes alone, and the next full run passed):
-  `tests/limit.rs` `a_rescheduled_job_moved_back_early_runs_at_its_place` (the moved-back job
-  ran after a later one) and `tests/limit_engine.rs`
-  `custom_errors_are_refusals_through_over_limit_when` (the remaining delay is measured after
-  `launcher.stop()`, which can take seconds). Both need more slack or a measurement taken
-  earlier.
+- Rate limiting: a job a limiter refuses is rescheduled at least 1 s later (`MIN_DELAY`, since a
+  reschedule runs the job again from its start), even when it kept its place in the wait line
+  and its unit frees milliseconds later. So when one job takes its unit a little late, the next
+  job, back for its own slot, waits a further second, and with a slow scheduler a later job can
+  take the free unit first: with `max_wait(ZERO)`, jobs in a line are not strictly served in
+  order (none is lost, and the limit is never exceeded). A shorter minimum for a job that kept
+  its place, as throttles have (50 ms), would tighten this; it is a change of semantics, not
+  made yet. Found through `tests/limit.rs`'s
+  `a_rescheduled_job_moved_back_early_runs_at_its_place`, which failed once under load during
+  the 0.1.0 release gate and now checks only its subject (B at its place).
 - The process title (proctitle) does not exist. `TTIN` (signal or `api::Process::dump`) logs
   each busy slot's job, not the tasks' stacks (tokio's task dumps need `tokio_unstable`), and
   the `hench` command has no `dump` subcommand yet (hench-server's).
