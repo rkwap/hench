@@ -988,7 +988,8 @@ a.chip:hover {
   font-weight: 600;
 }
 
-input[type="search"] {
+input[type="search"],
+.queue-limits input[type="text"] {
   min-width: 14rem;
   padding: 6px 10px;
   border: 1px solid var(--border-strong);
@@ -997,6 +998,31 @@ input[type="search"] {
   color: var(--text);
   font: inherit;
   font-size: 0.875rem;
+}
+
+.queue-limits {
+  margin: 0 0 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.queue-limits h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.queue-limits p {
+  margin: 0 0 8px;
+}
+
+.queue-limits label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.queue-limits input[type="text"] {
+  flex: 1 1 18rem;
 }
 
 .segmented {

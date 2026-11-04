@@ -13,15 +13,16 @@
 #   --base REV       also build REV and compare (for example f3da43d, the tree before the pro
 #                    features; with --kind, a revision that has them)
 #   --kind KIND      plain (default: throughput.rs), or unique, unique-start, throttled,
-#                    per-key or member (throughput_features.rs)
+#                    per-key, member or queue-limited (throughput_features.rs)
 #   --rounds N       runs of each build (default 15), in alternation, the first build to run
 #                    swapping every round
 #   --jobs N         no-op jobs per run (default 100000)
 #   --concurrency N  worker slots (default 25)
 #   --port N         the redis-server's port (default 16399)
 #
-# Needs redis-server in PATH. Honours CARGO_TARGET_DIR (the builds of both revisions share it:
-# each binary is copied out before the next build). Run it on an otherwise idle machine.
+# Needs redis-server in PATH. Honours CARGO_TARGET_DIR; the base revision builds in its own
+# subdirectory of it (`throughput-base`): sharing one target directory, cargo could link one
+# revision's example against the other's library. Run it on an otherwise idle machine.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -62,19 +63,19 @@ if [ "$kind" != plain ]; then
   kind_args=("$kind")
 fi
 
-# build <source tree> <name>: the example in release mode, copied to $work/<name>.
+# build <source tree> <name> <target dir>: the example in release mode, copied to $work/<name>.
 build() {
-  (cd "$1" && CARGO_TARGET_DIR="$target" cargo build --quiet --release -p hench --example "$example")
-  cp "$target/release/examples/$example" "$work/$2"
+  (cd "$1" && CARGO_TARGET_DIR="$3" cargo build --quiet --release -p hench --example "$example")
+  cp "$3/release/examples/$example" "$work/$2"
 }
 
 builds=(head)
-build "$root" head
+build "$root" head "$target"
 if [ -n "$base" ]; then
   tree="$work/base-tree"
   git -C "$root" worktree add --quiet --detach "$tree" "$base"
   cp "$root/crates/hench/examples/$example.rs" "$tree/crates/hench/examples/$example.rs"
-  build "$tree" base
+  build "$tree" base "$target/throughput-base"
   git -C "$root" worktree remove --force "$tree"
   tree=""
   builds=(base head)

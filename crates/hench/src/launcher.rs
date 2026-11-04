@@ -45,6 +45,7 @@ use crate::fetch::{Fetcher, Held, Stranded};
 use crate::job::Registry;
 use crate::job_logger::JobLogger;
 use crate::keys;
+use crate::limit::queue::QueueLimits;
 use crate::limit::{HeldPermits, Throttles};
 use crate::manager::Manager;
 use crate::metrics::Tracker;
@@ -120,8 +121,10 @@ pub(crate) struct Engine {
     pub(crate) batch_maintenance_outage: Outage,
     /// The throttles of this process, by name (the jobs' own, then the builder's).
     pub(crate) throttles: Throttles,
-    /// The throttle permits the engine holds for running jobs, by worker slot.
+    /// The permits the engine holds for running jobs (throttles, queue limits), by worker slot.
     pub(crate) permits: HeldPermits,
+    /// The process's view of the queue limits, shared by the fetchers of its capsules.
+    pub(crate) queue_limits: Arc<QueueLimits>,
     /// When the jobs this process parked in the schedule come due, for the scheduler.
     pub(crate) wakeups: crate::scheduled::Wakeups,
     tasks: Mutex<Vec<AbortHandle>>,
@@ -170,6 +173,10 @@ impl Engine {
             ),
             throttles: process_throttles(hench),
             permits: HeldPermits::default(),
+            queue_limits: Arc::new(QueueLimits::new(
+                hench.config.heartbeat_interval.saturating_mul(2),
+                crate::limit::queue::lease_for(hench.config.heartbeat_interval),
+            )),
             wakeups: crate::scheduled::Wakeups::default(),
             tasks: Mutex::new(Vec::new()),
         }
@@ -591,6 +598,10 @@ impl Hench {
         // treats in-progress jobs of processes without a heartbeat as abandoned.
         let mut heartbeat = Heartbeat::new(engine.clone());
         heartbeat.beat().await?;
+        // The queue limits of the configuration replace the stored ones, then the process reads
+        // them all before its first fetch.
+        crate::limit::queue::seed(&self.redis, &config.queue_limits).await?;
+        engine.queue_limits.refresh(&self.redis).await?;
 
         let fetcher = Fetcher::new(
             config.fetch,

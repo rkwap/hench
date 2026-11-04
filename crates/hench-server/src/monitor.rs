@@ -242,6 +242,8 @@ pub struct QueueInfo {
     pub latency: f64,
     /// Paused (workers skip it).
     pub paused: bool,
+    /// Its limits as stored (`concurrency=3;window=100/1m`), `null` when it has none.
+    pub limits: Option<String>,
 }
 
 /// One job class's executions over the last hour.
@@ -296,6 +298,7 @@ pub async fn gather(api: &Api) -> hench::Result<Report> {
                 size: queue.size,
                 latency: queue.latency,
                 paused: queue.paused,
+                limits: queue.limits,
             })
             .collect(),
         metrics,
@@ -410,6 +413,8 @@ fn queue_groups(process: &ProcessInfo) -> Vec<String> {
 
 /// The queues as a table: name (left-aligned), size and latency (right-aligned).
 pub fn render_queues(queues: &[QueueInfo]) -> String {
+    // The limits column only when some queue has limits.
+    let limited = queues.iter().any(|queue| queue.limits.is_some());
     let rows: Vec<Vec<String>> = queues
         .iter()
         .map(|queue| {
@@ -419,15 +424,29 @@ pub fn render_queues(queues: &[QueueInfo]) -> String {
             } else {
                 name.into_owned()
             };
-            vec![
+            let mut row = vec![
                 name,
                 queue.size.to_string(),
                 format!("{:.2}", queue.latency),
-            ]
+            ];
+            if limited {
+                row.push(
+                    queue
+                        .limits
+                        .as_deref()
+                        .map_or_else(|| "-".to_owned(), |limits| printable(limits).into_owned()),
+                );
+            }
+            row
         })
         .collect();
     let mut out = format!("---- Queues ({}) ----\n", queues.len());
-    out.push_str(&table(&["NAME", "SIZE", "LATENCY"], &rows));
+    let headers: &[&str] = if limited {
+        &["NAME", "SIZE", "LATENCY", "LIMITS"]
+    } else {
+        &["NAME", "SIZE", "LATENCY"]
+    };
+    out.push_str(&table(headers, &rows));
     out
 }
 
@@ -753,12 +772,14 @@ mod tests {
                 size: 12,
                 latency: 12.3456,
                 paused: false,
+                limits: None,
             },
             QueueInfo {
                 name: "a_long_queue_name".to_owned(),
                 size: 234,
                 latency: 567.89999,
                 paused: false,
+                limits: None,
             },
         ]);
         assert!(
@@ -828,12 +849,14 @@ mod tests {
                 size: 1_234,
                 latency: 3600.0,
                 paused: false,
+                limits: Some("concurrency=3".into()),
             },
             QueueInfo {
                 name: evil.into(),
                 size: 1,
                 latency: 0.0,
                 paused: true,
+                limits: None,
             },
         ];
         let text = render_queues(&queues);

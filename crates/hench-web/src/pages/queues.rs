@@ -73,7 +73,7 @@ fn checked_name(name: &str) -> WebResult<&str> {
 }
 
 /// `GET /queues/{name}[?page=N][&count=N][&direction=asc|desc][&substr=text]`: 404 for a
-/// queue that does not exist (not known, empty and not paused).
+/// queue that does not exist (not known, empty, neither paused nor limited).
 pub(crate) async fn page(ctx: Ctx, Path(QueueName { name }): Path<QueueName>) -> Response {
     let result = render_queue(&ctx, &name).await;
     super::finish(&ctx, result)
@@ -93,6 +93,28 @@ async fn render_queue(ctx: &Ctx, name: &str) -> WebResult<Response> {
     let stats = api.stats().await?;
     let paused = queue.is_paused().await?;
     let queue_url = ctx.url(&format!("/queues/{}", segment(name)));
+    let stored_limits = queue.stored_limits().await?;
+    let (limits_invalid, limit_links) = match queue.limits().await {
+        Ok(limits) => {
+            // A link to the usage of each limit in use (a limit no fetch has used yet has no
+            // page).
+            let id = format!("@{name}");
+            let mut links = Vec::new();
+            for limit in &limits {
+                let kind = limit.kind();
+                if api.limits().get(kind, &id).await?.is_some() {
+                    let letter = kind.letter();
+                    links.push((
+                        letter,
+                        ctx.url(&format!("/limits/{letter}/{}", segment(&id))),
+                    ));
+                }
+            }
+            (false, links)
+        }
+        Err(hench::Error::Config(_)) => (true, Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
 
     let (rows, total, pager, filter_summary, empty_text) = match &filter {
         Some(filter) => {
@@ -157,6 +179,12 @@ async fn render_queue(ctx: &Ctx, name: &str) -> WebResult<Response> {
         heading,
         total: format::delimit(total),
         paused,
+        limits: stored_limits
+            .as_deref()
+            .map(|limits| format::visible(limits).into_owned()),
+        limits_invalid,
+        limits_value: stored_limits.unwrap_or_default(),
+        limit_links,
         delete_url: format!("{queue_url}/delete"),
         ascending: order == SortOrder::Ascending,
         newest_href: order_link(""),
@@ -172,9 +200,10 @@ async fn render_queue(ctx: &Ctx, name: &str) -> WebResult<Response> {
     Ok(super::render(ctx, StatusCode::OK, &page))
 }
 
-/// `POST /queues/{name}`: `pause`, `unpause` or `delete` (the whole queue). Pausing and
-/// resuming go back to the page the form was on (`return_to=queue`: the queue's page),
-/// deleting to the queue list.
+/// `POST /queues/{name}`: `pause`, `unpause`, `set_limits` (with `limits`, the specs joined by
+/// `;`), `clear_limits` or `delete` (the whole queue). Pausing, resuming and the limits go back
+/// to the page the form was on (`return_to=queue`: the queue's page), deleting to the queue
+/// list. Limits that are not valid answer 400 with the reason.
 pub(crate) async fn action(
     ctx: Ctx,
     Path(QueueName { name }): Path<QueueName>,
@@ -201,6 +230,23 @@ async fn act(ctx: &Ctx, name: &str, form: &PostForm) -> WebResult<Response> {
         queue.unpause().await?;
         tracing::info!(queue = name, "dashboard resumed a queue");
         Ok(ctx.redirect(&back, Some(Notice::about(NoticeKind::QueueUnpaused, name))))
+    } else if form.has("set_limits") {
+        let specs = form.get("limits").unwrap_or_default();
+        match queue.set_limits_from_str(specs).await {
+            Ok(_) => {}
+            Err(hench::Error::Config(message)) => return Err(WebError::BadRequest(message)),
+            Err(error) => return Err(error.into()),
+        }
+        tracing::info!(
+            queue = name,
+            limits = specs,
+            "dashboard set the limits of a queue"
+        );
+        Ok(ctx.redirect(&back, Some(Notice::about(NoticeKind::QueueLimited, name))))
+    } else if form.has("clear_limits") {
+        queue.clear_limits().await?;
+        tracing::info!(queue = name, "dashboard cleared the limits of a queue");
+        Ok(ctx.redirect(&back, Some(Notice::about(NoticeKind::QueueUnlimited, name))))
     } else if form.has("delete") {
         queue.clear().await?;
         tracing::info!(queue = name, "dashboard deleted a queue");

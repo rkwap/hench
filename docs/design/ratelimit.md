@@ -741,11 +741,35 @@ its throttle.
   heartbeat interval (the cache refresh), or at once where the process already uses `FETCH_GATE`.
 - **Local cooldown**: a skipped queue is left out of the fetch order (script and blocking step) until its
   reported wait ends (rate limits) or for 250 ms (concurrency; ended early when this process releases a
-  permit of that queue). No other queue is ever excluded (L9).
-- **Blocking step**: `BLMOVE` may wait on a limited queue that is not cooling down. A job taken that way
-  from a limited queue is then checked with `ACQUIRE` (token = the fetch's token); refused, it goes back to
-  the **front** of its queue with `REQUEUE` (order kept) and the queue cools down. This keeps idle latency
-  at `BLMOVE`'s while charging limits for every job.
+  permit of that queue). A grant that uses the queue's last unit says so (the script checks the limits
+  again after charging them), and the queue cools down the same way without being refused. When a
+  cooldown ends, a single fetch of the process checks the queue again (the probe); the others keep
+  leaving it out until the probe reports, so idle processors do not stampede a full queue (each refusal is
+  a write). One worker times each cooldown (the others do not wake for it), a capsule's waits count only
+  its own queues, and no event but changed limits wakes every idle worker: a grant that left room, a
+  probe handed on, or a cooldown nobody times any longer wakes one sleeping worker of each capsule
+  fetching the queue (capsules sharing a queue share its cooldowns and its wake-ups); a freed slot or a
+  refusal wakes nobody (the worker that freed the slot checks the queue next). The queues a grant's (or a
+  stale reply's) script skipped are reported with it. No other queue is ever excluded (L9); a queue whose limit state cannot be read (a
+  key of the wrong type) is reported apart and closed alone, 5 s at a time.
+- **Blocking step**: a job leaves a limited queue only through `FETCH_GATE`, so the blocking step never
+  takes from one: it watches an empty limited queue with `BLMOVE q q RIGHT RIGHT` (from the list to its own
+  tail: nothing moves, and it returns once the queue has a job), one fetch per process per queue, and the
+  next fetch goes through the gate. Several processors taking jobs blocking-style and pushing back the
+  refused ones would reorder a burst. Unlimited queues are waited on as before; for basic fetch, a
+  processor watching a limited queue waits on it alone for that turn (processors rotate over the
+  candidates, like reliable fetch's queues). Processors with nothing to wait on sleep until a cooldown
+  ends or a probe reports; after a grant that left room, one of them is woken to take the next job. A
+  job taken blocking-style from a queue that became limited during the wait (a cache refresh) is still
+  checked with `ACQUIRE` and, refused, pushed back to the front (the first burst after limits are set may
+  start out of order). A job may wait up to the fetch timeout when the workers that could take it block
+  on other queues (the rest of a burst on a limited queue in a capsule whose other workers block on
+  unlimited queues; with basic fetch and few workers, an unlimited job while its worker watches): the
+  bound reliable fetch's rotation already has. A limited queue whose bursts must start at once gets its
+  own capsule.
+- **Lost replies**: a gate call that failed or was sent twice releases its token's concurrency leases on
+  every queue but the one a job came from (release is idempotent), so a lost grant does not hold a slot
+  for a whole lease.
 - **Release and renewal**: the queue's concurrency permit is an engine-held permit like a throttle's
   (heartbeat `RENEW`, released after the outcome, 60 s lease).
 - Ordering is FIFO and nothing churns: a limited queue's jobs wait in the queue itself (BullMQ's and

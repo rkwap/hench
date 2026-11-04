@@ -114,6 +114,14 @@ pub(crate) struct QueuePage {
     pub(crate) heading: String,
     pub(crate) total: String,
     pub(crate) paused: bool,
+    /// The queue's limits as stored (control characters spelled out), if it has some.
+    pub(crate) limits: Option<String>,
+    /// Whether the stored limits are not valid.
+    pub(crate) limits_invalid: bool,
+    /// The value of the limits field (the stored limits).
+    pub(crate) limits_value: String,
+    /// The usage pages of the queue's limits: `(kind letter, href)`.
+    pub(crate) limit_links: Vec<(char, String)>,
     pub(crate) queue_url: String,
     pub(crate) delete_url: String,
     pub(crate) ascending: bool,

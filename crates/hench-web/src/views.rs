@@ -268,6 +268,8 @@ pub(crate) struct QueueRow {
     /// When the oldest job was enqueued, once it waited a minute or more.
     pub(crate) since: Option<TimeView>,
     pub(crate) paused: bool,
+    /// Its limits as stored, control characters spelled out.
+    pub(crate) limits: Option<String>,
 }
 
 impl QueueRow {
@@ -284,6 +286,10 @@ impl QueueRow {
             latency: format::decimal(summary.latency, 2),
             since,
             paused: summary.paused,
+            limits: summary
+                .limits
+                .as_deref()
+                .map(|limits| format::visible(limits).into_owned()),
         }
     }
 }

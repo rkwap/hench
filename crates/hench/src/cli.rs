@@ -79,7 +79,7 @@
 //! | `batch_max_commit_jobs` | most members of one batch commit | 10 000 |
 //! | `batch_maintenance` | whether this process runs batch maintenance | `true` |
 //! | `[throttles.<name>]` | a throttle ([`crate::limit::Throttle`]): `limits` (specs such as `"concurrency=25"` or `"window=5/1s per key"`; a per-key limit applies to jobs pushed with a throttle key), `reschedules`, `max_delay`, `max_wait` and `lease` (seconds), `fail_open`, `stats` (whether to keep counters, the index entry and the wait line; `true`) and `stats_ttl` (seconds; 1 day) | |
-//! | `[queue_limits]` | reserved: refused by this version (queue limits come in a later one; meanwhile, give the queue's jobs a throttle) | |
+//! | `[queue_limits]` | limits on every fetch of a queue ([`crate::api::Queue::set_limits`]): queue name → a string of specs joined by `;` (`exports = "concurrency=3; window=100/1m"`) or an array of specs; concurrency, window, bucket and leaky limits, at most one of each kind; written to Redis at start, replacing the stored limits of those queues | |
 //! | `[[periodic]]` | a schedule ([`crate::periodic`]): `name`, `cron` and `tz`, or `every` and `offset` (whole seconds), `class`, `args`, `queue`, `retry`, `tags`, `catch_up` (`"latest"`, `"skip"`, `"all"`) and `catch_up_max`, `deadline` (whole seconds), `paused`, `description`, `unique_for` (whole seconds), `unique_until`, `throttle`, `throttle_key` | |
 //!
 //! ```toml
@@ -91,6 +91,9 @@
 //! limits = ["concurrency=3", "window=100/1s per key"]
 //! max_wait = 0.5               # seconds
 //! lease = 30                   # seconds
+//!
+//! [queue_limits]
+//! exports = "concurrency=3"
 //!
 //! [[periodic]]
 //! name = "nightly-report"
@@ -107,10 +110,12 @@
 //!
 //! Every part of the file is checked when it is read, the sections of the other environments
 //! included (a mistake in `[production]` fails in development already). The tables
-//! `capsules`, `throttles` and `periodic` are settings (and `queue_limits`, reserved: a file
-//! that has one is refused until a version supports it); any other top-level table is an
-//! environment's section, which holds settings only (so a misspelled `[capsule.serial]` is an
-//! error, not an ignored environment). Section names are case-sensitive.
+//! `capsules`, `throttles`, `queue_limits` and `periodic` are settings; any other top-level
+//! table is an environment's section, which holds settings only (so a misspelled
+//! `[capsule.serial]` is an error, not an ignored environment). Section names are
+//! case-sensitive. A table in an environment's section replaces the top-level one as a whole
+//! (`[production.queue_limits]` drops every top-level `[queue_limits]` entry it does not
+//! repeat).
 //!
 //! [`Settings::apply`] logs the file and the environment in use, and warnings when an
 //! environment chosen with `-e` or `APP_ENV` selects nothing: no configuration file was read
@@ -376,6 +381,9 @@ pub struct Settings {
     /// The `[throttles.<name>]` tables: defined last, so that they replace the throttles of the
     /// same names defined in code.
     pub throttles: Vec<crate::limit::Throttle>,
+    /// The `[queue_limits]` table, by queue: applied after the code's, so that a queue's limits
+    /// from the file replace the code's.
+    pub queue_limits: Vec<(String, Vec<crate::limit::Limit>)>,
     /// The `[[periodic]]` schedules (a schedule named like one defined in code is a
     /// configuration error at build, as two code schedules of one name are). A table names its
     /// job by `class`: when the process registers that job type, `build` gives the schedule the
@@ -519,9 +527,12 @@ impl Settings {
         for periodic in &self.periodic {
             builder = builder.periodic_from_file(periodic.clone());
         }
-        // Last, so that the file's throttles replace the code's of the same names.
+        // Last, so that the file's throttles and queue limits replace the code's.
         for throttle in &self.throttles {
             builder = builder.throttle(throttle.clone());
+        }
+        for (queue, limits) in &self.queue_limits {
+            builder = builder.queue_limits(queue.clone(), limits.iter().copied());
         }
         builder
     }
@@ -767,13 +778,14 @@ impl FileConfig {
         // The feature tables, read by their features.
         let throttles = match &self.throttles {
             Some(value) => crate::limit::toml::parse_throttles("throttles", value)
-                .map_err(|error| error.to_string())?,
+                .map_err(|error| crate::limit::toml::reason(&error))?,
             None => Vec::new(),
         };
-        if let Some(value) = &self.queue_limits {
-            crate::limit::toml::queue_limits("queue_limits", value)
-                .map_err(|error| error.to_string())?;
-        }
+        let queue_limits = match &self.queue_limits {
+            Some(value) => crate::limit::toml::parse_queue_limits("queue_limits", value)
+                .map_err(|error| crate::limit::toml::reason(&error))?,
+            None => Vec::new(),
+        };
         #[cfg(feature = "periodic")]
         let periodic = match &self.periodic {
             Some(value) => crate::periodic::toml::parse_schedules("periodic", value)
@@ -910,6 +922,7 @@ impl FileConfig {
                 .transpose()?,
             batch_maintenance: self.batch_maintenance,
             throttles,
+            queue_limits,
             #[cfg(feature = "periodic")]
             periodic,
             warnings: Vec::new(),
@@ -1219,8 +1232,8 @@ mod tests {
                 "throttles.stripe",
             ),
             (
-                "[queue_limits]\nexports = \"c=3\"",
-                "`[queue_limits]` are not supported",
+                "[queue_limits]\nexports = \"c=3;c=4\"",
+                "queue_limits.exports",
             ),
             ("[staging.throttles.x]\nlimits = []", "throttles.x"),
             ("periodic_group = \" padded\"", "periodic_group"),
@@ -1232,6 +1245,15 @@ mod tests {
         for environment in ["throttles", "queue_limits", "periodic"] {
             let error = Settings::from_toml("tag = \"x\"", environment).unwrap_err();
             assert!(error.contains("cannot name an environment"), "{error}");
+        }
+        // The feature tables' errors are not wrapped twice (the caller names the file and
+        // adds the kind of error once).
+        for text in [
+            "[queue_limits]\nexports = \"c=3;c=4\"",
+            "[throttles.stripe]\nlimits = [\"rate=1\"]",
+        ] {
+            let error = Settings::from_toml(text, "staging").unwrap_err();
+            assert!(!error.contains("configuration error"), "{text}: {error}");
         }
     }
     use clap::Parser;

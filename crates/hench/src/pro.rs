@@ -104,6 +104,10 @@ pub(crate) enum Classified {
 /// permit released meanwhile is released after its renewal. Errors are logged by the features;
 /// a beat never fails because of them.
 pub(crate) async fn on_beat(engine: &Engine) {
+    // A limit set or changed at run time reaches every process within a heartbeat.
+    if let Err(error) = engine.queue_limits.refresh(&engine.redis).await {
+        tracing::debug!(%error, "could not read the queue limits; retrying next beat");
+    }
     let locks = unique::engine::running_locks(engine);
     let permits = engine.permits.renewing().await;
     let mut calls = unique::engine::renew_calls(&locks);
@@ -149,6 +153,7 @@ pub(crate) fn info(engine: &Engine) -> Map<String, Value> {
         ("periodic", periodic::FORMAT),
         ("batches", batch::FORMAT),
         ("limits", limit::FORMAT),
+        ("queue_limits", limit::QUEUE_FORMAT),
     ]
     .into_iter()
     .filter_map(|(name, format)| Some((name.to_owned(), json!(format?))))

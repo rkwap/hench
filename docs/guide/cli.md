@@ -19,7 +19,8 @@ hench web --read-only --prefix /jobs --allowed-host jobs.example.com
 hench stats                 # version, overview, processes, queues, busiest job classes
 hench stats overview
 hench processes
-hench queues
+hench queues                # with each queue's limits
+hench queues limit exports --set "concurrency=3; window=100/1m"   # or --clear
 
 # Signals: quiet (finish running jobs, take no more) and stop.
 hench quiet host-1:4242:0a1b2c3d4e5f
@@ -43,7 +44,10 @@ With `--api`, `GET <prefix>/api/v1/stats`, `/queues` and `/processes` return JSO
 60}`. Each process of `/processes` (and of `hench processes --json`) lists the names of the
 queues it works on in `queues`, and its capsules by name in `capsules`, with their
 concurrency, mode and queue weights (`{"default": {"concurrency": 5, "mode": "weighted",
-"weights": {"critical": 3, "default": 1}}}`). The features add their routes under the same
+"weights": {"critical": 3, "default": 1}}}`). `PUT <prefix>/api/v1/queues/{name}/limits` with
+`{"limits": "concurrency=3"}` sets a queue's limits and `DELETE` clears them
+([queue limits](rate-limiting.md#queue-limits)); `/queues` shows each queue's `limits`. The
+features add their routes under the same
 prefix (`/periodic`, `/batches`, `/limits`, `/locks`, described in their pages); a
 read-only server refuses every change. Requests are read strictly (an unknown field, in the
 body or in `unique`, or an unknown

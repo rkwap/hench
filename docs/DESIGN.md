@@ -128,7 +128,7 @@ Key helpers live in `hench::keys`; never hand-format keys elsewhere.
 | `limit-stats:<k>:<id>` | HASH | a limit identity's counters and signature; `stats_ttl` (24 h) after the last use |
 | `limits` | ZSET | identity → stats expiry; no expiry, trimmed by score |
 | `l\|YYYYMMDD\|H:MM` | HASH | per-minute limiter counters, `<name>\|g` (granted), `\|r` (refused); `EXPIRE` 8 h |
-| `queue-limits` | HASH | reserved for queue limits (queue → limit specs, configuration; phase 3 of rate limiting, planned for 0.2): 0.1 neither reads nor writes it, and refuses a worker file's `[queue_limits]`; no expiry |
+| `queue-limits` | HASH | queue limits (§9j): queue name → its limits in the spec grammar, long form, kinds in the order concurrency, window, bucket, leaky, joined by `;` (`concurrency=3;window=100/1m`); configuration, no expiry. The state of a queue's limits is `limit:<k>:@<queue>` with counters `limit-stats:<k>:@<queue>` |
 
 Identity = `"{hostname}:{pid}:{nonce}"` where nonce is 12 hex chars (6 random bytes).
 
@@ -1067,7 +1067,7 @@ cancellation check, then the release of a `start` unique lock (§5).
 
 `Stats` (processed, failed, scheduled_size, retry_size, dead_size, enqueued,
 processes_size, workers_size, default_queue_latency, queues), `StatsHistory`, `Queue`
-(`all`, `exists`, `size`, `latency`, `is_paused`/`pause`/`unpause`, `jobs` page/iter, `find_job`, `clear`), `JobRecord`
+(`all`, `exists`, `size`, `latency`, `is_paused`/`pause`/`unpause`, `limits`/`stored_limits`/`set_limits`/`set_limits_from_str`/`clear_limits`/`all_limits` (queue limits, §9j), `jobs` page/iter, `find_job`, `clear`), `JobRecord`
 (parsed + raw value; `display_class`, `display_args`, error backtrace decode, `latency`,
 `delete`), `SortedEntry` (`at`, `retry` [decrements retry_count then pushes], `add_to_queue`,
 `delete`, `kill`, `reschedule`), `SortedSet`/`JobSet` (`size`, `scan(pattern)`, `page`,
@@ -1171,9 +1171,10 @@ Implementation (api lane):
     changed), which every fetch skips; a processor already blocked on the queue may still take
     one job arriving within its `fetch_timeout`. Pausing is by name: it outlives `clear` and can
     precede the queue's first job. `Queue::is_paused` and `Stats::queue_summaries` read the set;
-    `queue_summaries` lists the queues of `queues` plus every paused queue (an emptied or
-    never-used queue stays listed, with size 0, while it is paused, so that it can be resumed;
-    `Stats::queues`, like Sidekiq's, lists `queues` alone).
+    `queue_summaries` lists the queues of `queues` plus every paused or limited queue (an
+    emptied or never-used queue stays listed, with size 0, while it is paused or limited, so
+    that it can be resumed or its limits cleared; `Stats::queues`, like Sidekiq's, lists
+    `queues` alone), each with its `limits` as stored.
   - `ProcessSet::cleanup` and the workers' scheduler (before every poll) share one
     implementation (`api::cleanup_processes`: the `process_cleanup` lock `SET NX EX 60` sent
     once, then `SSCAN processes`, pipelined `HGET <identity> info`, `SREM` of the members
@@ -1346,8 +1347,9 @@ and the message), so a `retry: false` batch member's failure summary names its e
   (`?only=jobs|processes`, else 400; running jobs paged, 100 per page) and `POST /busy`
   (`quiet` or `stop`, with `identity` for one process, else every process that is not
   embedded); `GET /queues`; `GET /queues/{name}` (`?direction=asc|desc`, `?substr=`) and
-  `POST /queues/{name}` (`pause`, `unpause` or `delete`; `return_to=queue` comes back to the
-  queue's page); `POST /queues/{name}/delete` (`key` = `"{index}-{sha1}"`: the job's index in
+  `POST /queues/{name}` (`pause`, `unpause`, `set_limits` with `limits`, `clear_limits`, or
+  `delete`; `return_to=queue` comes back to the queue's page; limits that are not valid answer
+  400 with the reason); `POST /queues/{name}/delete` (`key` = `"{index}-{sha1}"`: the job's index in
   the queue when the page was rendered, 0 the newest, and the SHA-1 of its JSON; the server
   looks for that JSON at the index, then from 10 jobs before it onwards, 10 000 jobs at most —
   pushes move jobs back — and removes the exact value with `LREM`; not found: "gone". Rows stay
@@ -1584,7 +1586,10 @@ and the message), so a `retry: false` batch member's failure summary names its e
   An internet-facing deployment still belongs behind a reverse proxy (rate limits, TLS).
 - **JSON API** (`--api`): `GET /stats` (`processed`, `failed`, `busy`, `processes`, `enqueued`,
   `scheduled`, `retries`, `dead`, `default_latency`), `GET /queues` (`[{name, size, latency,
-  paused}]` by name), `GET /processes` (identity, hostname, pid, tag, labels, started_at, beat,
+  paused, limits}]` by name, `limits` the stored text or `null`), `PUT /queues/{name}/limits`
+  (`{"limits": "concurrency=3; window=100/1m"}`; answers `{queue, limits}` with the stored
+  form, 400 for limits that are not valid) and `DELETE /queues/{name}/limits` (`{"cleared":
+  bool}`; both 403 when read-only), `GET /processes` (identity, hostname, pid, tag, labels, started_at, beat,
   concurrency, busy, quiet, embedded, rss_kb, version, `queues`: the names of the queues the
   process works on, each once, in its configured order (`api::Process::queues`), `capsules`:
   each capsule by name, `{concurrency, mode, weights: {queue: weight}}`, in the order the
@@ -1606,13 +1611,15 @@ and the message), so a `retry: false` batch member's failure summary names its e
   type declares (Sidekiq's raw `Client.push`).
 - `hench stats [all|version|overview|processes|queues|metrics|periodic|batches|limits|locks]
   [--json]` (the features' sections below), `hench processes [--json]`,
-  `hench queues [--json]`: sidekiqmon's report — `hench <version>` and the UTC time; the
+  `hench queues [--json]` (and `hench queues limit <queue> (--set SPECS | --clear) [--json]`,
+  queue limits, §9j): sidekiqmon's report — `hench <version>` and the UTC time; the
   overview (`Processed`, `Failed`, `Busy`, `Enqueued`, `Retries`, `Scheduled`, `Dead`,
   right-aligned labels, thousands separators); each process (`identity [tag] [labels]
   [embedded] [quiet]`, `Started: <time> (<just now | a minute ago | N minutes ago | an hour
   ago | N hours ago>)`, `Threads: N (M busy)`, `Queues:` per capsule joined with `; ` and
   wrapped at 80 columns, `Version:` when it differs); the queues table (`NAME SIZE LATENCY`,
-  name left-aligned, numbers right-aligned, two-space gutters, paused queues marked); the
+  and `LIMITS` when some queue has limits; name left-aligned, numbers right-aligned, two-space
+  gutters, paused queues marked); the
   metrics of the last hour (`---- Metrics (last hour) ----`: the ten classes with the most
   execution time, `CLASS EXECUTIONS FAILED TIME (S) AVG (MS)`, or `No job ran in the last
   hour.`). `--json` prints the same data (`metrics`: `[{class, executions, failed, seconds,
@@ -1898,8 +1905,10 @@ headings below and its STATUS lines under its section.
   applied after the builder's own throttles (the file's throttle replaces a code throttle of the
   same name); `[[periodic]]` schedules are added after the builder's own, and a name both
   define is a configuration error at `build` (`duplicate periodic job name`), as two code
-  schedules of one name are; `[queue_limits]` (queue limits, phase 3) is still refused with "not
-  supported by this version of hench yet", never silently ignored. New scalar keys: `unique_jobs`, `periodic_group`, `periodic_poller`,
+  schedules of one name are; `[queue_limits]` maps queue names to their limits (a string of
+  specs joined by `;`, or an array of specs: `exports = "concurrency=3"`), applied after the
+  builder's own (the file's limits of a queue replace the code's) and checked when the file is
+  read (§9j). New scalar keys: `unique_jobs`, `periodic_group`, `periodic_poller`,
   `periodic_poll_interval` and `periodic_lease` (float secs; round 3: the lease is a documented
   setting now), `periodic_history`, `batch_ttl`, `batch_linger` (secs), `batch_max_commit_jobs`,
   `batch_maintenance`.
@@ -2590,6 +2599,125 @@ NAME[:KEY]`, `POST /api/v1/jobs` with `throttle`, `hench periodic add --throttle
 `JobPayload` pushed with `Client::push`) is throttled only when it names one (release review,
 fresh-user-1: documented in the README).
 
+**Queue limits** (0.2; `docs/design/ratelimit.md` §2.7, as implemented). Limits on every
+fetch of a queue, enforced by the fetch: a queue over its limits is skipped like a paused one,
+its jobs stay in it in order (nothing is parked in the schedule), and the other queues keep
+flowing (BullMQ's and Faktory's model, Oban Pro's per-queue limits).
+
+- *Kinds.* Concurrency, window, bucket and leaky limits, at most one of each per queue (`points`
+  is refused: its cost is known after the job ran; two limits of a kind are refused rather than
+  named `~2`, since a queue's identity is fixed). The limits of a queue share the reserved name
+  `@<queue>`: identities `c:@exports`, `w:@exports`... A queue's name keeps every character in
+  an identity (`Limits` splits `name:key` at the first `:` except in `@` ids).
+- *Storage* (D8). `queue-limits` (§2), configuration like `paused`: `api::Queue::set_limits`,
+  `set_limits_from_str`, `clear_limits`, `limits`, `Queue::all_limits`; the dashboard and the
+  `hench` command use them. `HenchBuilder::queue_limits(queue, limits)` and the file's
+  `[queue_limits]` are written at every start (`HSET`, before the first fetch), replacing the
+  stored limits of those queues: code wins over run-time edits at the next deploy; queues the
+  configuration does not name keep theirs. Stored limits that do not parse (an edit by hand)
+  close the queue in every process until they are set again or cleared, with an error logged
+  once a minute: a broken limit must not lift the protection it was meant to give.
+- *Cache.* Each process reads the hash before its first fetch, at every heartbeat (in
+  `pro::on_beat`), and whenever a fetch finds a queue's stored limits differ from the ones it
+  believes; a fetch also refreshes a view older than two heartbeat intervals (a fetcher made
+  with the public `Fetcher::new`, outside a process, every 10 s). A limit set at run time thus
+  applies everywhere within a heartbeat interval. Changed limits end the queue's cooldown.
+- *Fetch.* A capsule none of whose queues has limits (after leaving out cooling queues) uses
+  `RELIABLE_FETCH`/`BASIC_FETCH` unchanged (their SHA-1s stay pinned); otherwise the
+  non-blocking step is `LIMIT_FETCH_GATE` (prelude + `lib.lua` + `fetch_gate.lua`): per queue in
+  fetch order, paused queues are skipped; the stored limits are compared with the process's
+  (`{2, name}` when they differ: the process re-reads them and tries again, at most three times
+  per fetch); an unlimited queue is fetched as the plain scripts do; a limited, non-empty queue
+  has every limit checked (`hl_check`, cost 1, all or none) and, if granted, its job taken
+  (`LMOVE`, or `RPOP` for basic fetch: the first write) then every limit charged with the fetch's
+  token (16 random hex digits) and counted (`g`, `rc`, `@<queue>|g`); an over-limit queue is
+  counted (`r`, `@<queue>|r`) and reported with its wait (the rate limits' exact wait, and
+  whether a concurrency limit is full); an empty limited queue is open for the blocking step and
+  not charged. After a grant the script checks the queue's limits once more and says whether
+  they would refuse the next job (with its wait), and a grant's reply lists the queues skipped
+  before it. A limit state of the wrong type (a hand edit) is caught (`pcall`) and closes its
+  queue alone: reported apart, not counted, logged once a minute, closed 5 s at a time. Time
+  is read once, before the first write, only when a limited queue is checked.
+- *Cooldown.* A queue over its limits, or left full by a grant, is left out of the process's
+  fetches, every capsule's (the cooldowns live with the shared cache): until its rate limits
+  free a unit (at most 5 s, so that a raised limit or a reset is noticed), or for 250 ms when a
+  concurrency limit is full, ended early when the process frees a slot of the queue (that
+  worker checks it next; a refusal its probe reports after the slot freed does not cool the
+  queue again). Once a cooldown ends, a single fetch of the process checks the queue again
+  (the *probe*); the others leave it out until the probe reports (refused again, open, or not
+  reached: then the next fetch probes it and a sleeping worker is woken), so the refusals,
+  each a write, do not grow with the idle processors. Each cooldown is *timed* by one worker,
+  the first to wait for it (handed on when that worker takes a job, fails or ends): the others
+  neither sleep nor block shorter for it, and a capsule's waits count only its own queues; a
+  worker waiting for a queue probed elsewhere looks again within 250 ms at the latest. No
+  other queue is ever left out (L9). Nothing wakes every idle worker at once but changed
+  limits: a grant that left room, a probe handed on and a cooldown left untimed each wake one
+  sleeping worker of each capsule that fetches the queue (each capsule registers its queues
+  and waker with the shared cooldowns, which capsules sharing a queue share), so the script
+  calls per job stay a few however many workers idle (they grew with them before: 39 per job
+  with 20 workers and a second, empty limited queue). When every
+  candidate queue cools or is left to another worker, the fetch sleeps until the first comes
+  back (at most the fetch timeout); otherwise the blocking step waits at most until then.
+- *Blocking step.* A job leaves a limited queue only through the gate, which keeps the
+  queue's order: blocking waiters each taking a job of a burst, refused, would push them back
+  in the order of their refusals. So the blocking step never takes from a limited queue: one
+  fetch per process *watches* an empty one with `BLMOVE q q RIGHT RIGHT` (the list to its own
+  tail: nothing moves, and it returns once the queue has a job) and the next fetch goes through
+  the gate; the other workers leave a watched queue out of their fetches, and a cooling queue
+  is not watched (it is checked when its cooldown ends). The workers rotate
+  over the candidates (each unlimited queue for reliable fetch, all of them in one `BRPOP` for
+  basic fetch, and each limited queue no other worker watches); a worker with no candidate
+  sleeps like one whose queues all cool. A grant that left room wakes one sleeping worker of
+  each capsule fetching the queue (the queue may have more jobs), so idle workers come one at
+  a time per capsule; with several capsules sharing a queue, the ones that find it empty
+  cost a read-only gate call each (5 per job for 4 capsules on a trickle, against 2 for
+  one). A job a
+  blocking wait took from a queue that became limited meanwhile (a cache refresh) is checked
+  with `LIMIT_ACQUIRE` (cost 1, no wait line); refused, it goes back to the front of its queue
+  (a basic fetch's job whose push-back fails is logged in full at `error`), so the first
+  burst after limits are set may start out of order (within one fetch timeout of the change).
+- *Latency.* A worker waits on one candidate at a time, so a job can wait up to the fetch
+  timeout (2 s) when the workers that could take it block elsewhere: the jobs of a burst on a
+  limited queue after the first, when the other workers fetching it block on unlimited queues
+  (a sleeping worker is woken at once, in any capsule fetching the queue; one blocked in Redis
+  is not), or, for basic
+  fetch with few workers, a job of an unlimited queue while its only worker watches a limited
+  one. Reliable fetch's rotation already has this bound for plain queues. A limited queue whose
+  bursts must start at once gets its own capsule (its idle workers sleep and are woken one by
+  one). The watch's `BLMOVE` is refused when Redis is out of memory (`BRPOP` is not): a basic
+  fetch watcher then fails and pauses like any fetch error, while the gate keeps draining.
+- *Permits.* A fetched job's concurrency leases (lease 60 s, or four heartbeat intervals when
+  that is longer) are engine-held permits like a throttle's (`HeldPermits`, owner `@<queue>`):
+  registered under the processor's slot right after the fetch, renewed with the throttles' in
+  the heartbeat's pipeline, released after the outcome write (with the slot's other permits),
+  after a job handed back at quiet, after a processor crash and after a hard shutdown's requeue.
+  Rate limits hold nothing. A tool fetching with its own `Fetcher` releases them with
+  `Fetcher::release_limits` (else the lease ends a minute later). Queue permits record no hold
+  time for the throttles' line spacing.
+- *Failures.* A lost reply of the gate is resent once by `with_retry` (a dropped connection):
+  the first job taken stays unheld in the in-progress list and is pushed back by the
+  reconciliation; a rate grant may be charged twice (under-admits). After a gate call that
+  failed or was sent twice, the fetch releases its token's concurrency leases on every queue
+  but the one its job came from (best effort; releasing a lease never granted does nothing), and
+  so does a failed `LIMIT_ACQUIRE`. Refreshes of the cache run one at a time, so an older read
+  never replaces a newer one. A crash leaves the leases to end by themselves (a minute of
+  under-use).
+- *Cost.* Only capsules with limited queues pay: one `HGET` per open queue per fetch (the stale
+  check) and the checks of the limited queues; the heartbeat adds one `HGETALL`.
+- *Rollout.* hench 0.1 advertises `features.limits` but ignores queue limits; a process that
+  enforces them also advertises `features.queue_limits = 1`, and the dashboard's Busy page marks
+  every live process without it ("lacks: queue_limits") while some queue has limits. Upgrade
+  every worker before setting queue limits.
+- *Configuration at start.* A process writes the limits of its configuration at every start
+  (deploys, crash restarts and scale-outs alike), replacing the stored limits of those queues,
+  and logs at `info` each stored value it replaces that differs (a run-time edit, or another
+  deployment's configuration). Removing a queue from the configuration leaves its stored limits
+  in place: clear them (`hench queues limit <queue> --clear`). An environment section's
+  `[queue_limits]` replaces the top-level table as a whole (§9e).
+- *Surfaces.* `set_limits`/`set_limits_from_str` return the stored form; `stored_limits` reads
+  it raw (valid or not). The queue page links the usage page of each of its limits once a fetch
+  used it (before that the identity has no counters and no page).
+
 **Testing.** Testing clients are unlimited by default; the in-memory `LimitTable` ports the
 algorithms, the wait line and the leases to tokio's clock (parity tests against Redis with
 fixed times); `Client::limited_jobs`.
@@ -2824,7 +2952,8 @@ The conventions shared by the four features (`docs/design/pro-features.md` §2),
 
 - **Decisions of phase 2** (each the most production-ready option):
   1. The phase-0 scaffolding is gone: `AVAILABLE`, the "not supported yet" answers and
-     refusals (only `[queue_limits]`, phase 3, is still refused), and `Classified::Shutdown`
+     refusals (`[queue_limits]`, phase 3, was refused until queue limits landed in 0.2), and
+     `Classified::Shutdown`
      (a job stopped by the shutdown is requeued before any classification).
   2. `Verdict::NoRetry` carries the error's class and message, so that the batch failure
      summary of a `retry: false` member names its error.

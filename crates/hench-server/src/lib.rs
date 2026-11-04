@@ -12,7 +12,7 @@
 //! hench stats [all|version|overview|processes|queues|metrics|periodic|batches|limits|locks]
 //!             [--json]
 //! hench processes [--json]
-//! hench queues [--json]
+//! hench queues [limit <queue> (--set "concurrency=3; window=100/1m" | --clear)] [--json]
 //! hench quiet <identity|all>
 //! hench stop <identity|all>
 //! hench enqueue <class> [--args JSON] [--queue Q] [--in 5m | --at RFC3339] [--retry R]

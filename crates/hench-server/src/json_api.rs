@@ -2,7 +2,12 @@
 //!
 //! * `GET /stats`: the totals (`processed`, `failed`, `busy`, `processes`, `enqueued`,
 //!   `scheduled`, `retries`, `dead`, `default_latency`);
-//! * `GET /queues`: `[{name, size, latency, paused}]`, by name;
+//! * `GET /queues`: `[{name, size, latency, paused, limits}]`, by name (`limits`: the queue's
+//!   limits as stored, `concurrency=3;window=100/1m`, or `null`);
+//! * `PUT /queues/{name}/limits`: `{"limits": "concurrency=3; window=100/1m"}` sets the limits
+//!   on every fetch of the queue (`hench::api::Queue::set_limits`) and answers `{"queue",
+//!   "limits"}` with the stored form; limits that are not valid answer `400`;
+//! * `DELETE /queues/{name}/limits`: clears them, `{"cleared": <whether it had some>}`;
 //! * `GET /processes`: the live processes, by identity, as `hench processes --json` prints
 //!   them: `identity`, `hostname`, `pid`, `tag`, `labels`, `started_at`, `beat` (RFC 3339,
 //!   `null` when unknown), `concurrency`, `busy`, `quiet`, `embedded`, `rss_kb`, `version`,
@@ -27,22 +32,24 @@
 //!   `DELETE /limits/{kind}/{id}` (a reset);
 //! * [`locks`]: `GET /locks`, `GET /locks/{digest}`, `DELETE /locks/{digest}` (a release).
 //!
-//! When the server is read-only, every change (`POST`, `DELETE`) answers `403`, like a change
-//! a browser sends from another site.
+//! When the server is read-only, every change (`POST`, `PUT`, `DELETE`) answers `403`, like a
+//! change a browser sends from another site.
 //!
 //! Errors are JSON too: `{"error": "..."}`, with the status that says what went wrong: `400`
-//! for a malformed query or path (a path parameter that is not UTF-8 once percent-decoded),
+//! for a malformed query or path (a path parameter that is not UTF-8 once percent-decoded) and
+//! for queue limits that are not valid,
 //! `404` for a path the API does not serve, `405` for a method a route does not take (with
 //! the `Allow` header), `422` for a request that is not a valid job, `503` when Redis fails.
 
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use axum::extract::Path;
 use axum::extract::rejection::{JsonRejection, PathRejection};
 use axum::extract::{Request, State};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use hench::api::{Api, Stats};
 use hench::limit::ThrottleOption;
@@ -79,8 +86,8 @@ struct ApiState {
 /// The API's router: mount it at `<prefix>/api/v1` with `Router::nest_service`, so that every
 /// path under it, the unknown ones included, gets the API's JSON answers (a `nest` would leave
 /// them to the dashboard's HTML fallback when the dashboard is mounted at `<prefix>`). With
-/// `read_only`, every change (`POST /jobs` and the features' `POST` and `DELETE` routes)
-/// answers `403`.
+/// `read_only`, every change (`POST /jobs`, the queue limits' `PUT` and `DELETE`, and the
+/// features' `POST` and `DELETE` routes) answers `403`.
 pub fn router(api: Api, read_only: bool) -> Router {
     let features = Router::new()
         .merge(periodic::routes(&api, read_only))
@@ -91,6 +98,10 @@ pub fn router(api: Api, read_only: bool) -> Router {
     Router::new()
         .route("/stats", get(stats))
         .route("/queues", get(queues))
+        .route(
+            "/queues/{name}/limits",
+            put(set_queue_limits).delete(clear_queue_limits),
+        )
         .route("/processes", get(processes))
         .route("/jobs", post(enqueue))
         .with_state(state)
@@ -203,9 +214,81 @@ async fn queues(State(state): State<Arc<ApiState>>) -> Response {
                     size: summary.size,
                     latency: summary.latency,
                     paused: summary.paused,
+                    limits: summary.limits,
                 })
                 .collect();
             Json(queues).into_response()
+        }
+        Err(failure) => unavailable(&failure),
+    }
+}
+
+/// The body of `PUT /queues/{name}/limits`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LimitsBody {
+    /// The limits in the spec grammar, joined by `;`.
+    limits: String,
+}
+
+/// The `{name}` of a queue route.
+#[derive(Debug, Deserialize)]
+struct QueuePath {
+    name: String,
+}
+
+/// `PUT /queues/{name}/limits`.
+async fn set_queue_limits(
+    State(state): State<Arc<ApiState>>,
+    path: Result<Path<QueuePath>, PathRejection>,
+    body: Result<Json<LimitsBody>, JsonRejection>,
+) -> Response {
+    if state.read_only {
+        return error(StatusCode::FORBIDDEN, "the API is read-only");
+    }
+    let name = match path {
+        Ok(Path(QueuePath { name })) => name,
+        Err(rejection) => return bad_path(&rejection),
+    };
+    let body = match body {
+        Ok(Json(body)) => body,
+        Err(rejection) => return error(rejection.status(), rejection.body_text()),
+    };
+    match state
+        .api
+        .queue(&name)
+        .set_limits_from_str(&body.limits)
+        .await
+    {
+        Ok(stored) => {
+            tracing::info!(
+                queue = %name.escape_debug(),
+                limits = %stored,
+                "JSON API set the limits of a queue"
+            );
+            Json(json!({"queue": name, "limits": stored})).into_response()
+        }
+        Err(Error::Config(message)) => error(StatusCode::BAD_REQUEST, message),
+        Err(failure) => unavailable(&failure),
+    }
+}
+
+/// `DELETE /queues/{name}/limits`.
+async fn clear_queue_limits(
+    State(state): State<Arc<ApiState>>,
+    path: Result<Path<QueuePath>, PathRejection>,
+) -> Response {
+    if state.read_only {
+        return error(StatusCode::FORBIDDEN, "the API is read-only");
+    }
+    let name = match path {
+        Ok(Path(QueuePath { name })) => name,
+        Err(rejection) => return bad_path(&rejection),
+    };
+    match state.api.queue(&name).clear_limits().await {
+        Ok(cleared) => {
+            tracing::info!(queue = %name.escape_debug(), "JSON API cleared the limits of a queue");
+            Json(json!({"cleared": cleared})).into_response()
         }
         Err(failure) => unavailable(&failure),
     }

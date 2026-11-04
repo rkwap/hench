@@ -13,10 +13,16 @@
 //! stats_ttl = 86400   # seconds they stay after the last use; default 86400
 //! ```
 //!
-//! [`parse_throttles`] reads and checks a `throttles` table; the file's settings carry the result
-//! to the builder (throttles defined in the file replace same-named ones from code). Queue
-//! limits come with phase 3: [`queue_limits`] refuses their table rather than accept limits
-//! nothing would apply.
+//! ```toml
+//! [queue_limits]
+//! exports = "concurrency=3"
+//! reports = ["concurrency=5", "window=100/1m"]   # or "concurrency=5; window=100/1m"
+//! ```
+//!
+//! [`parse_throttles`] reads and checks a `throttles` table, [`parse_queue_limits`] a
+//! `queue_limits` table; the file's settings carry the results to the builder (throttles defined
+//! in the file replace same-named ones from code, and a queue's limits from the file replace the
+//! code's).
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -25,13 +31,50 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 use crate::limit::spec::parse_specs;
-use crate::limit::{Scope, Throttle};
+use crate::limit::{Limit, Scope, Throttle};
 
-/// Reads the `queue_limits` table of `path`.
-pub(crate) fn queue_limits(path: &str, _value: &toml::Value) -> Result<()> {
-    Err(Error::Config(format!(
-        "{path}: `[queue_limits]` are not supported by this version of hench yet"
-    )))
+/// The queue limits of a `queue_limits` table at `path` (the section's name, for errors): queue
+/// name → its limits, a string of specs joined by `;` or an array of specs, each queue's limits
+/// checked as [`Queue::set_limits`](crate::api::Queue::set_limits) checks them. Sorted by queue.
+pub(crate) fn parse_queue_limits(
+    path: &str,
+    value: &toml::Value,
+) -> Result<Vec<(String, Vec<Limit>)>> {
+    let Some(table) = value.as_table() else {
+        return Err(Error::Config(format!(
+            "{path}: expected a table of queue names, each with its limits \
+             (`exports = \"concurrency=3\"`)"
+        )));
+    };
+    table
+        .iter()
+        .map(|(queue, specs)| {
+            let at = || format!("{path}.{queue}");
+            let text = match specs {
+                toml::Value::String(text) => text.clone(),
+                toml::Value::Array(items) => items
+                    .iter()
+                    .map(|item| {
+                        item.as_str().map(str::to_owned).ok_or_else(|| {
+                            Error::Config(format!("{}: every limit must be a string", at()))
+                        })
+                    })
+                    .collect::<Result<Vec<String>>>()?
+                    .join(";"),
+                other => {
+                    return Err(Error::Config(format!(
+                        "{}: expected a string of limits (`\"concurrency=3\"`) or an array of \
+                         them, not {}",
+                        at(),
+                        other.type_str()
+                    )));
+                }
+            };
+            let limits = crate::limit::queue::parse(queue, &text)
+                .map_err(|error| Error::Config(format!("{}: {}", at(), reason(&error))))?;
+            Ok((queue.clone(), limits))
+        })
+        .collect()
 }
 
 /// One `[throttles.<name>]` table.
@@ -123,7 +166,7 @@ fn read_throttle(at: &str, name: String, file: FileThrottle) -> Result<Throttle>
 
 /// The reason of a configuration error, without the "configuration error:" its `Display`
 /// starts with (it is wrapped in another one).
-fn reason(error: &Error) -> String {
+pub(crate) fn reason(error: &Error) -> String {
     match error {
         Error::Config(reason) => reason.clone(),
         other => other.to_string(),
@@ -247,9 +290,51 @@ mod tests {
     }
 
     #[test]
-    fn queue_limits_are_refused_until_they_land() {
-        let parsed: toml::Table = "[queue_limits]\nreports = \"c=1\"".parse().unwrap();
-        let error = queue_limits("queue_limits", &parsed["queue_limits"]).unwrap_err();
-        assert!(error.to_string().contains("not supported"), "{error}");
+    fn queue_limits_are_read_and_checked() {
+        let parsed: toml::Table = r#"
+            [queue_limits]
+            reports = "concurrency=1; window=10/1s"
+            exports = ["c=3", "leaky=60/1m"]
+        "#
+        .parse()
+        .unwrap();
+        let limits = parse_queue_limits("queue_limits", &parsed["queue_limits"]).unwrap();
+        assert_eq!(limits.len(), 2);
+        assert_eq!(limits[0].0, "exports");
+        assert_eq!(
+            limits[0].1,
+            [
+                Limit::Concurrency { limit: 3 },
+                Limit::Leaky {
+                    size: 60,
+                    drain: Duration::from_secs(60)
+                }
+            ]
+        );
+        assert_eq!(limits[1].0, "reports");
+        assert_eq!(limits[1].1.len(), 2);
+        for (text, expected) in [
+            (
+                "[queue_limits]\nq = \"points=5/1s\"",
+                "queue_limits.q: invalid limit",
+            ),
+            (
+                "[queue_limits]\nq = \"c=1;c=2\"",
+                "queue_limits.q: the queue `q` has two",
+            ),
+            ("[queue_limits]\nq = 3", "queue_limits.q: expected a string"),
+            (
+                "[queue_limits]\nq = [3]",
+                "queue_limits.q: every limit must be a string",
+            ),
+            ("[queue_limits]\nq = \"\"", "is given no limit"),
+            ("queue_limits = 3", "expected a table of queue names"),
+        ] {
+            let parsed: toml::Table = text.parse().unwrap();
+            let error = parse_queue_limits("queue_limits", &parsed["queue_limits"])
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{text}: {error}");
+        }
     }
 }

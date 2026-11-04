@@ -137,7 +137,8 @@
 //! * `/`: the dashboard (`HEAD /` is a cheap health check), with the JSON it polls, `/stats`
 //!   and `/stats/queues` (`/dashboard/stats` redirects to `/stats`);
 //! * `/busy` (`POST`: quiet or stop processes);
-//! * `/queues`, `/queues/{name}` (`POST`: pause, resume or delete the queue) and
+//! * `/queues`, `/queues/{name}` (`POST`: pause, resume, set or clear the queue's limits, or
+//!   delete the queue) and
 //!   `POST /queues/{name}/delete` (one of its jobs);
 //! * `/retries`, `/scheduled` and `/morgue` (`POST`: the selected jobs), each job at
 //!   `/retries/{key}`, `/scheduled/{key}` and `/morgue/{key}` (`POST`: that job), and the

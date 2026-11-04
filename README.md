@@ -172,7 +172,7 @@ Redis is the bottleneck, it costs Redis two commands per job against one.
 | **Unique jobs** | one waiting or running copy per job and arguments, debouncing, locks released with the outcome ([guide][guide-unique]) |
 | **Periodic jobs** | cron expressions or intervals, in time zones, one push per tick across processes without a leader ([guide][guide-periodic]) |
 | **Batches** | callbacks when a group of jobs completes or succeeds, nested batches, cancellation, staged workflows ([guide][guide-batches]) |
-| **Rate limiting** | concurrent, window, bucket, leaky and points limiters inside jobs; throttles on job starts ([guide][guide-limits]) |
+| **Rate limiting** | concurrent, window, bucket, leaky and points limiters inside jobs; throttles on job starts; limits on whole queues, checked when workers fetch ([guide][guide-limits]) |
 | **Iterable jobs** | long jobs that save their cursor and resume after a stop, a failure or a deploy ([guide][guide-iterable]) |
 | **Observability** | execution metrics and histograms per job class, deploy marks, `tracing` spans per job ([guide][guide-metrics]) |
 | **Testing** | fake and inline clients that need no Redis, a private `redis-server` per integration test ([guide][guide-testing]) |

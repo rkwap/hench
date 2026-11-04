@@ -9,7 +9,9 @@
 //! * `throttled`: a job of a throttle whose limit (10,000 at once) never refuses, so that only
 //!   the cost of its permits is measured;
 //! * `per-key`: the same with a per-key limit, over 100 keys;
-//! * `member`: a member of a batch (batches of 1,000).
+//! * `member`: a member of a batch (batches of 1,000);
+//! * `queue-limited`: a plain job of a queue whose concurrency limit (10,000 at once) never
+//!   refuses, so that only the cost of the limited fetch and of its permit is measured.
 //!
 //! ```text
 //! cargo run --release --example throughput_features -- redis://127.0.0.1:6379/ <kind> [jobs] [concurrency]
@@ -21,6 +23,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use hench::limit::Limit;
 use hench::{
     BulkPush, Client, Hench, Job, JobContext, JobError, RedisConfig, Throttle, UniqueUntil,
 };
@@ -73,7 +76,7 @@ async fn push(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bulk = BulkPush::new(Noop::NAME, chunk);
     let bulk = match kind {
-        "plain" | "member" => bulk,
+        "plain" | "member" | "queue-limited" => bulk,
         "unique" => bulk.unique_for(Duration::from_secs(600)),
         "unique-start" => bulk
             .unique_for(Duration::from_secs(600))
@@ -103,16 +106,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jobs: u64 = argument(&args, 2, 100_000)?;
     let concurrency: usize = argument(&args, 3, 25)?;
 
-    let hench = Hench::builder()
+    let mut builder = Hench::builder()
         .redis_config(RedisConfig::new(url))
         .auto_register(false)
         .register(Noop)
         .throttle(Throttle::new(THROTTLE).concurrency(10_000))
         .throttle(Throttle::new(THROTTLE_PER_KEY).concurrency_per_key(10_000))
         .concurrency(concurrency)
-        .queues(["default"])
-        .build()
-        .await?;
+        .queues(["default"]);
+    if kind == "queue-limited" {
+        builder = builder.queue_limits("default", [Limit::Concurrency { limit: 10_000 }]);
+    }
+    let hench = builder.build().await?;
     let mut next = 0;
     while next < jobs {
         let end = (next + CHUNK).min(jobs);

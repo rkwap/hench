@@ -12,11 +12,36 @@ its library, which exists for that binary.
 
 ## [Unreleased]
 
-Nothing yet. Planned for 0.2 (the [roadmap](docs/ROADMAP.md) says what each item brings and
-what to do until then):
+### Added
 
-- **Queue limits**: a concurrency or rate limit on a whole queue, checked when workers fetch
-  from it.
+- **Queue limits**: concurrency, window, bucket and leaky limits on every fetch of a queue,
+  shared by every worker. A queue over its limits is skipped like a paused one: its jobs stay
+  in it, in order, and the other queues keep flowing. Set them in code
+  (`HenchBuilder::queue_limits`), in the worker's file (`[queue_limits]`, refused until now),
+  or at run time (`api::Queue::set_limits`, `set_limits_from_str`, `clear_limits`, `limits`,
+  `Queue::all_limits`; the queue's page in the dashboard; `hench queues limit <queue> --set
+  .. | --clear`; `PUT` and `DELETE /api/v1/queues/{name}/limits`, which answer 400 to limits
+  that are not valid). `set_limits` and `set_limits_from_str` return the stored form, and
+  `Queue::stored_limits` reads it as stored. Workers apply a change within a heartbeat
+  interval; a worker writes the limits of its own configuration at every start, so code wins
+  over run-time edits at the next start. Capsules without limited queues fetch exactly as
+  before. A tool fetching with its own `fetch::Fetcher` gives a job's slot back with
+  `Fetcher::release_limits`. A worker that enforces queue limits advertises
+  `features.queue_limits = 1` in its heartbeat; the Busy page marks the others ("lacks:
+  queue_limits") while some queue has limits: upgrade every worker before setting any.
+
+### Changed
+
+- `api::QueueSummary` has a `limits` field, and `Stats::queue_summaries` lists limited queues
+  even without jobs (like paused ones); `Queue::exists` is `true` for a limited queue.
+  `hench queues` (text and `--json`) and `GET /api/v1/queues` show each queue's `limits`.
+- `api::Queue::clear` keeps the queue's limits, as it keeps its pause.
+- Log messages about the permits of running jobs name what granted them (`by`: a throttle, or
+  `@<queue>`), since queue limits hold permits too.
+
+Still planned for 0.2 (the [roadmap](docs/ROADMAP.md) says what each item brings and what to
+do until then):
+
 - **Staged batch commits**: batches larger than `batch_max_commit_jobs` (10 000 jobs) defined
   in one go, and still visible all at once.
 - **Batch cancellation seen sooner**: iterable jobs that check their batch at each checkpoint,

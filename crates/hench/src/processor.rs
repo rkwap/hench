@@ -159,12 +159,18 @@ impl Processor {
                     // alone.
                     let _held = (self.fetcher.strategy() == FetchStrategy::Reliable)
                         .then(|| engine.held.hold(&work));
+                    // The slots of its queue's concurrency limit, held for the job's run
+                    // (renewed by the heartbeat; released with the slot's other permits).
+                    let queue = self.hold_queue_permit(&work).await;
                     if engine.quiet.is_cancelled() {
                         // Fetched while the process was going quiet: hand it back.
                         self.requeue(&work).await;
+                        self.release_queue_permit(queue.as_deref()).await;
                         return;
                     }
-                    if self.process(work).await == Flow::Exit {
+                    let flow = self.process(work).await;
+                    self.release_queue_permit(queue.as_deref()).await;
+                    if flow == Flow::Exit {
                         return;
                     }
                 }
@@ -719,6 +725,30 @@ impl Processor {
     ) -> Option<LockOp> {
         fetched.lock.as_ref()?;
         unique::engine::lock_op(fetched, classified, settlement)
+    }
+
+    /// Registers the slots `work` holds in its queue's concurrency limit under this processor's
+    /// slot, so that the heartbeat renews them. Returns the queue when the job came with
+    /// permits of its queue's limits (released by [`Processor::release_queue_permit`]).
+    async fn hold_queue_permit(&self, work: &UnitOfWork) -> Option<String> {
+        let permit = work.queue_permit()?;
+        if !permit.leases.is_empty() {
+            let owner = crate::limit::queue::id(&permit.queue);
+            self.engine
+                .permits
+                .hold(&self.tid, permit.leases.clone(), &owner)
+                .await;
+        }
+        Some(permit.queue.clone())
+    }
+
+    /// Releases the slots this processor's job held in its queue's concurrency limit (if the
+    /// outcome write did not already, with the slot's other permits), and ends the queue's
+    /// cooldown in this process: a slot is free.
+    async fn release_queue_permit(&self, queue: Option<&str>) {
+        let Some(queue) = queue else { return };
+        limit::engine::release(&self.engine, &self.tid).await;
+        self.fetcher.slot_freed(queue);
     }
 
     /// Releases the permits the engine holds for this slot's job (throttled jobs only), after

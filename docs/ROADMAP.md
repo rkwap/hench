@@ -1,12 +1,9 @@
 # Roadmap
 
-[CHANGELOG.md][changelog] lists what each release changed. Planned for 0.2:
+[CHANGELOG.md][changelog] lists what each release changed. Done for 0.2 so far:
+**queue limits** (concurrency, window, bucket and leaky limits on every fetch of a queue; see
+the [rate limiting guide](guide/rate-limiting.md#queue-limits)). Still planned for 0.2:
 
-- **Queue limits**: a concurrency or rate limit on a whole queue, enforced by the fetch, so that
-  a queue over its limit is skipped like a paused one while its jobs keep their order and the
-  other queues keep flowing. Until then, a [throttle](guide/rate-limiting.md) on the
-  queue's job types limits each type, and a `[queue_limits]` table in the worker's file is
-  refused rather than ignored.
 - **Staged batch commits**: a batch of any size defined in one closure, written in chunks with
   bounded memory and still visible all at once. Until then one commit holds at most
   `batch_max_commit_jobs` jobs (10 000 by default, a child batch counting as 10), and a larger

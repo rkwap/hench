@@ -12,7 +12,9 @@ use hench::{
 };
 use serde_json::json;
 
-use crate::cli::{Cli, Command, EnqueueArgs, Section, SignalArgs, StatsArgs};
+use crate::cli::{
+    Cli, Command, EnqueueArgs, QueueLimitArgs, QueuesCommand, Section, SignalArgs, StatsArgs,
+};
 
 // The commands of the features, one module each.
 pub mod batches;
@@ -40,13 +42,18 @@ pub async fn run<W: Write>(cli: Cli, out: &mut W) -> anyhow::Result<()> {
             };
             stats(&connect(redis).await?, &args, out).await
         }
-        Command::Queues(args) => {
-            let args = StatsArgs {
-                section: Section::Queues,
-                json: args.json,
-            };
-            stats(&connect(redis).await?, &args, out).await
-        }
+        Command::Queues(args) => match args.command {
+            Some(QueuesCommand::Limit(limit)) => {
+                queue_limit(&connect(redis).await?, &limit, out).await
+            }
+            None => {
+                let args = StatsArgs {
+                    section: Section::Queues,
+                    json: args.list.json,
+                };
+                stats(&connect(redis).await?, &args, out).await
+            }
+        },
         Command::Quiet(args) => signal(&connect(redis).await?, &args, false, out).await,
         Command::Stop(args) => signal(&connect(redis).await?, &args, true, out).await,
         Command::Enqueue(args) => enqueue(&connect(redis).await?, args, out).await,
@@ -59,6 +66,50 @@ pub async fn run<W: Write>(cli: Cli, out: &mut W) -> anyhow::Result<()> {
         Command::Limits(args) => limits::run(&connect(redis).await?, args, out).await,
         Command::Locks(args) => locks::run(&connect(redis).await?, args, out).await,
     }
+}
+
+/// `hench queues limit <queue> (--set SPECS | --clear) [--json]`.
+async fn queue_limit<W: Write>(
+    api: &Api,
+    args: &QueueLimitArgs,
+    out: &mut W,
+) -> anyhow::Result<()> {
+    let queue = api.queue(&args.queue);
+    let name = monitor::printable(&args.queue);
+    if let Some(specs) = &args.set {
+        let stored = queue.set_limits_from_str(specs).await?;
+        if args.json {
+            writeln!(
+                out,
+                "{}",
+                serde_json::json!({"queue": args.queue, "limits": stored})
+            )?;
+        } else {
+            writeln!(
+                out,
+                "Limited the queue `{name}`: {}. Workers apply it within a heartbeat interval.",
+                monitor::printable(&stored)
+            )?;
+        }
+    } else {
+        let cleared = queue.clear_limits().await?;
+        if args.json {
+            writeln!(
+                out,
+                "{}",
+                serde_json::json!({"queue": args.queue, "cleared": cleared})
+            )?;
+        } else if cleared {
+            writeln!(
+                out,
+                "Cleared the limits of the queue `{name}`. Workers apply it within a heartbeat \
+                 interval."
+            )?;
+        } else {
+            writeln!(out, "The queue `{name}` had no limits.")?;
+        }
+    }
+    Ok(())
 }
 
 /// The Redis configuration: `--redis-url` (or `HENCH_REDIS_URL`), else the environment like

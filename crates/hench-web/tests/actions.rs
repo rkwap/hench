@@ -958,3 +958,132 @@ async fn paused_queues_stay_listed_when_emptied() {
         .assert_status(StatusCode::SEE_OTHER);
     assert_eq!(app.get("/queues").await.texts("a.queue-name"), ["mailers"]);
 }
+
+#[tokio::test]
+async fn queue_limits_can_be_set_and_cleared_from_the_queue_page() {
+    let app = App::new().await;
+    push_raw(
+        &app,
+        "exports",
+        &json!({"class": "Export", "args": [], "jid": jid()}),
+    )
+    .await;
+    let page = app.get("/queues/exports").await;
+    page.assert_status(StatusCode::OK);
+    assert_eq!(page.count("input[name=limits]"), 1);
+    assert_eq!(page.count("button[name=clear_limits]"), 0);
+    assert!(page.texts(".queue-limits p")[1].contains("None"));
+
+    let res = app
+        .post(
+            "/queues/exports",
+            &[
+                ("set_limits", "1"),
+                ("limits", "window=100/1m; concurrency=3"),
+                ("return_to", "queue"),
+            ],
+        )
+        .await;
+    res.assert_status(StatusCode::SEE_OTHER);
+    assert_eq!(res.location(), "/queues/exports");
+    assert_eq!(
+        hench::api::Queue::all_limits(&app.api).await.unwrap()["exports"],
+        "concurrency=3;window=100/1m"
+    );
+    let page = app.get("/queues/exports").await;
+    assert_eq!(
+        page.attrs("input[name=limits]", "value"),
+        ["concurrency=3;window=100/1m"]
+    );
+    assert_eq!(page.count("button[name=clear_limits]"), 1);
+    // No fetch has used the limits yet: no usage page to link to.
+    assert!(page.attrs(".queue-limits a", "href").is_empty());
+    // Once a fetch counted a grant of the concurrency limit, its usage is linked.
+    let _: i64 = app
+        .redis(
+            redis_rs::cmd("HSET")
+                .arg("limit-stats:c:@exports")
+                .arg("p")
+                .arg("c|3")
+                .arg("g")
+                .arg(1),
+        )
+        .await;
+    let page = app.get("/queues/exports").await;
+    assert_eq!(
+        page.attrs(".queue-limits a", "href"),
+        ["/limits/c/@exports"]
+    );
+    app.get("/limits/c/@exports")
+        .await
+        .assert_status(StatusCode::OK);
+    // The list shows a chip.
+    let list = app.get("/queues").await;
+    assert_eq!(list.texts(".chip"), ["concurrency=3;window=100/1m"]);
+
+    // Limits that are not valid are refused with the reason, and nothing changes.
+    for specs in ["points=5/1s", "c=1;c=2", "", "c=1 per key"] {
+        let res = app
+            .post("/queues/exports", &[("set_limits", "1"), ("limits", specs)])
+            .await;
+        res.assert_status(StatusCode::BAD_REQUEST);
+        assert!(res.html().html().contains("limit"), "{specs}");
+    }
+    assert_eq!(
+        hench::api::Queue::all_limits(&app.api).await.unwrap()["exports"],
+        "concurrency=3;window=100/1m"
+    );
+
+    let res = app
+        .post(
+            "/queues/exports",
+            &[("clear_limits", "1"), ("return_to", "queue")],
+        )
+        .await;
+    res.assert_status(StatusCode::SEE_OTHER);
+    assert!(
+        hench::api::Queue::all_limits(&app.api)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // A queue with limits and no job is still listed and can be opened.
+    app.api
+        .queue("reports")
+        .set_limits_from_str("c=1")
+        .await
+        .unwrap();
+    let list = app.get("/queues").await;
+    assert!(list.texts("a.queue-name").contains(&"reports".to_owned()));
+    app.get("/queues/reports")
+        .await
+        .assert_status(StatusCode::OK);
+
+    // Broken stored limits are shown with a warning.
+    let _: i64 = app
+        .redis(
+            redis_rs::cmd("HSET")
+                .arg("queue-limits")
+                .arg("reports")
+                .arg("concurrency=lots"),
+        )
+        .await;
+    let page = app.get("/queues/reports").await;
+    page.assert_status(StatusCode::OK);
+    assert_eq!(page.count(".queue-limits .notice-warning"), 1);
+}
+
+#[tokio::test]
+async fn a_read_only_dashboard_shows_queue_limits_without_the_form() {
+    let app = App::build(|web| web.read_only(true), "").await;
+    app.api
+        .queue("exports")
+        .set_limits_from_str("c=2")
+        .await
+        .unwrap();
+    let page = app.get("/queues/exports").await;
+    page.assert_status(StatusCode::OK);
+    assert_eq!(page.count("input[name=limits]"), 0);
+    assert_eq!(page.texts(".queue-limits .chip"), ["concurrency=2"]);
+}

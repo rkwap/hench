@@ -38,6 +38,7 @@
 | `batch_ttl(d)`, `batch_linger(d)`, `batch_max_commit_jobs(n)`, `batch_commit_timeout(d)` | 30 days, 24 h, 10 000, 30 s | [batches](batches.md): expiry, the jobs of one commit, its timeout |
 | `batch_maintenance(bool)`, `batch_maintenance_interval(d)`, `batch_dispatch_grace(d)` | on, 30 s, 10 s | batch housekeeping |
 | `throttle(t)` | none | a throttle jobs name ([rate limiting](rate-limiting.md)) |
+| `queue_limits(queue, limits)` | none | limits on every fetch of a queue, written to Redis at start ([queue limits](rate-limiting.md#queue-limits)) |
 | `over_limit_reschedules(n)`, `over_limit_backoff(f)`, `over_limit_max_delay(d)`, `over_limit_when(f)` | 20, the refusal's slot, 24 h, none | jobs a limiter refuses while they run |
 
 `build()` validates everything before connecting (empty queue names, duplicate jobs, zero
