@@ -202,15 +202,13 @@ async fn over_limit_jobs_are_rescheduled_not_failed() {
     })
     .await;
     launcher.stop().await.unwrap();
-    let now = now_secs_f64();
     for (job, score) in scheduled(&pool).await {
         assert!([&jid, &error_jid].contains(&&job.jid), "{}", job.jid);
-        // At the hint (30 s), plus up to 10 % jitter.
-        let delay = score - now;
-        assert!(delay > 25.0 && delay < 33.5, "{delay}");
         let limited = job.limited.expect("limited");
         assert_eq!((limited.n, limited.by.as_str()), (1, "w:api"));
-        assert!(limited.at.is_some());
+        // At the hint (30 s) after the refusal `limited.at` records, plus up to 10 % jitter.
+        let delay = score - limited.at.expect("refused at") as f64 / 1000.0;
+        assert!((29.99..=33.01).contains(&delay), "{delay}");
         assert_eq!(job.retry_count, None);
         assert_eq!(job.error_class, None);
         assert_eq!(job.at, None);
@@ -282,8 +280,10 @@ async fn the_scheduler_brings_rescheduled_jobs_back_through_client_middleware() 
     })
     .await;
     let (job, score) = scheduled(&pool).await.remove(0);
-    let delay = score - now_secs_f64();
-    assert!(delay > 55.0 && delay < 66.5, "60 s × 1: {delay}");
+    // After the refusal `limited.at` records, plus up to 10 % jitter.
+    let refused_at = job.limited.as_ref().and_then(|l| l.at).expect("refused at");
+    let delay = score - refused_at as f64 / 1000.0;
+    assert!((59.99..=66.01).contains(&delay), "60 s × 1: {delay}");
     let raw: Vec<Vec<u8>> = cmd(&pool, &redis_cmd!("ZRANGE", keys::SCHEDULE, 0, 0)).await;
     let () = cmd(
         &pool,
@@ -364,9 +364,13 @@ async fn custom_errors_are_refusals_through_over_limit_when() {
     .await;
     launcher.stop().await.unwrap();
     let (job, score) = scheduled(&pool).await.remove(0);
-    let delay = score - now_secs_f64();
-    assert!(delay > 5.0 && delay < 8.5, "{delay}");
-    assert_eq!(job.limited.unwrap().by, "http:api");
+    let limited = job.limited.unwrap();
+    // Measured from the refusal, which `limited.at` records, not from the time the test looks:
+    // the wait above and the shutdown, slow on a busy machine, must not count. The delay is the
+    // hint (7 s) plus a jitter of up to a tenth.
+    let delay = score - limited.at.unwrap() as f64 / 1000.0;
+    assert!((6.99..=7.71).contains(&delay), "{delay}");
+    assert_eq!(limited.by, "http:api");
     // The classifier's panic is reported, and the job failed like any other.
     let reported: Vec<String> = errors
         .all()
@@ -402,9 +406,11 @@ async fn a_panicking_backoff_falls_back_on_the_hint() {
     })
     .await;
     launcher.stop().await.unwrap();
-    let (_, score) = scheduled(&pool).await.remove(0);
-    let delay = score - now_secs_f64();
-    assert!(delay > 25.0 && delay < 33.5, "{delay}");
+    let (job, score) = scheduled(&pool).await.remove(0);
+    // The hint (30 s) after the refusal `limited.at` records, plus up to 10 % jitter.
+    let refused_at = job.limited.and_then(|l| l.at).expect("refused at");
+    let delay = score - refused_at as f64 / 1000.0;
+    assert!((29.99..=33.01).contains(&delay), "{delay}");
     let reported: Vec<String> = errors
         .all()
         .into_iter()

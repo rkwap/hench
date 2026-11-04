@@ -716,7 +716,16 @@ async fn a_rescheduled_job_moved_back_early_runs_at_its_place() {
     })
     .await;
     launcher.stop().await.unwrap();
-    assert_eq!(runs.entries(), ["0", "1", "2", "3"], "B ran at its place");
+    let order = runs.entries();
+    assert_eq!(order[..2], ["0", "1"], "B ran at its place: {order:?}");
+    // C and D ran too, in either order: that is not this test's subject. A reschedule waits at
+    // least a second (`MIN_DELAY`), so when B takes its unit a few milliseconds late, C, back
+    // for its own slot, is refused by those milliseconds and returns a second later; on a busy
+    // machine the scheduler can bring it back later still, and D, back for its slot, finds the
+    // unit free first.
+    let mut rest = order[2..].to_vec();
+    rest.sort();
+    assert_eq!(rest, ["2", "3"], "{order:?}");
 }
 
 /// round3-regressions-2: `try_acquire` never takes a place in the wait line, whatever calls it:
