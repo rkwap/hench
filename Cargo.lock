@@ -917,7 +917,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hench"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "hench-benchmarks"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "hench",
@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "hench-macros"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -979,7 +979,7 @@ dependencies = [
 
 [[package]]
 name = "hench-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "hench-web"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "askama",

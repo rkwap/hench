@@ -8,7 +8,7 @@
 //! * `DELETE /limits/{kind}/{id}`: resets it, `{"reset": <whether it was in use>}`; `403` when
 //!   the API is read-only.
 //!
-//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/ratelimit.md
+//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/ratelimit.md
 
 use std::sync::Arc;
 

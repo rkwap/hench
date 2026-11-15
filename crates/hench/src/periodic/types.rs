@@ -57,7 +57,7 @@ impl From<&PeriodicMeta> for PeriodicTick {
 
 /// What to do with ticks that could not be enqueued on time ([periodic.md] §2.2.5).
 ///
-/// [periodic.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/periodic.md
+/// [periodic.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/periodic.md
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum CatchUp {

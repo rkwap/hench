@@ -31,7 +31,7 @@
 //! timeout: on every open queue (`BRPOP`) for basic fetch, on one queue (`BLMOVE`) for
 //! reliable fetch, rotating the queue each processor waits on so that every queue has waiters.
 //!
-//! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
+//! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/DESIGN.md
 //
 // LANE: engine — this module is owned by the engine lane.
 

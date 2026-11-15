@@ -70,7 +70,7 @@
 //! The repository's [DESIGN.md] (as of this release) describes the data model and the full
 //! semantics.
 //!
-//! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
+//! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/DESIGN.md
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

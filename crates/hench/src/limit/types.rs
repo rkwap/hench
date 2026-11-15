@@ -200,7 +200,7 @@ pub enum LimitOrder {
 /// assert_eq!(stripe.spec(), "c=25;w=5/1000 per key");
 /// ```
 ///
-/// [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/ratelimit.md
+/// [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/ratelimit.md
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Throttle {

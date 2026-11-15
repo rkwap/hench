@@ -1,7 +1,7 @@
 //! `hench limits`: the limiters and throttles (list, show, reset, clear-line), and `hench stats
 //! limits` ([ratelimit.md] §2.16).
 //!
-//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/ratelimit.md
+//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/ratelimit.md
 //!
 //! Names and keys come from Redis: they are printed with their control characters spelled out.
 //!

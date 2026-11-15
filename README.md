@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/rkwap/hench/raw/v0.1.0/docs/assets/banner.png" width="720" alt="Hench">
+<img src="https://github.com/rkwap/hench/raw/v0.1.1/docs/assets/banner.png" width="720" alt="Hench">
 
 <p><strong>Background jobs for Rust, built on Sidekiq's battle-tested design.</strong><br>
 Reliable by default: running jobs survive a crashed process.</p>
@@ -10,15 +10,15 @@ Reliable by default: running jobs survive a crashed process.</p>
 <a href="https://docs.rs/hench"><img src="https://img.shields.io/docsrs/hench" alt="docs.rs"></a>
 <a href="https://codecov.io/gh/rkwap/hench"><img src="https://codecov.io/gh/rkwap/hench/graph/badge.svg" alt="coverage"></a>
 <a href="#minimum-supported-rust-version"><img src="https://img.shields.io/badge/rustc-1.88+-orange.svg" alt="Rust 1.88+"></a>
-<a href="https://github.com/rkwap/hench/blob/v0.1.0/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+<a href="https://github.com/rkwap/hench/blob/v0.1.1/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
 <p>
-<a href="https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/getting-started.md">Getting started</a> ·
-<a href="https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/README.md">Guide</a> ·
+<a href="https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/getting-started.md">Getting started</a> ·
+<a href="https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/README.md">Guide</a> ·
 <a href="https://docs.rs/hench">API reference</a> ·
-<a href="https://github.com/rkwap/hench/blob/v0.1.0/benchmarks/README.md">Benchmarks</a> ·
-<a href="https://github.com/rkwap/hench/blob/v0.1.0/CHANGELOG.md">Changelog</a>
+<a href="https://github.com/rkwap/hench/blob/v0.1.1/benchmarks/README.md">Benchmarks</a> ·
+<a href="https://github.com/rkwap/hench/blob/v0.1.1/CHANGELOG.md">Changelog</a>
 </p>
 
 </div>
@@ -29,8 +29,8 @@ system that has carried some of the busiest Ruby applications for more than a de
 and Enterprise features and its dashboard come included.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/rkwap/hench/raw/v0.1.0/docs/assets/dashboard-dark.png">
-  <img alt="The Hench dashboard: processed and failed jobs live and over a month, with the counts of busy, enqueued, retried, scheduled and dead jobs" src="https://github.com/rkwap/hench/raw/v0.1.0/docs/assets/dashboard-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/rkwap/hench/raw/v0.1.1/docs/assets/dashboard-dark.png">
+  <img alt="The Hench dashboard: processed and failed jobs live and over a month, with the counts of busy, enqueued, retried, scheduled and dead jobs" src="https://github.com/rkwap/hench/raw/v0.1.1/docs/assets/dashboard-light.png">
 </picture>
 
 ## Highlights
@@ -231,34 +231,34 @@ is not affiliated with or endorsed by Contributed Systems or by any of these pro
 [sidekiq-cron]: https://github.com/sidekiq-cron/sidekiq-cron
 [sidekiq-batch]: https://github.com/breamware/sidekiq-batch
 [sidekiq-throttled]: https://github.com/ixti/sidekiq-throttled
-[guide]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/README.md
-[guide-start]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/getting-started.md
-[guide-jobs]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/jobs.md
-[guide-push]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/jobs.md#enqueuing-jobs
-[guide-config]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/configuration.md
-[guide-retries]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/reliability.md
-[guide-delivery]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/reliability.md#delivery-guarantees-reliable-and-basic-fetch
-[guide-unique]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/unique-jobs.md
-[guide-periodic]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/periodic-jobs.md
-[guide-batches]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/batches.md
-[guide-limits]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/rate-limiting.md
-[guide-iterable]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/iterable-jobs.md
-[guide-metrics]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/metrics.md
-[guide-testing]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/testing.md
-[guide-dashboard]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/dashboard.md
-[guide-cli]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/cli.md
-[guide-deploy]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/deployment.md
-[guide-sidekiq]: https://github.com/rkwap/hench/blob/v0.1.0/docs/guide/sidekiq.md
-[design]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
-[benchmarks]: https://github.com/rkwap/hench/blob/v0.1.0/benchmarks/README.md
-[benchmarks-latency]: https://github.com/rkwap/hench/blob/v0.1.0/benchmarks/README.md#why-hench-falls-behind-with-latency
-[roadmap]: https://github.com/rkwap/hench/blob/v0.1.0/docs/ROADMAP.md
-[changelog]: https://github.com/rkwap/hench/blob/v0.1.0/CHANGELOG.md
-[license]: https://github.com/rkwap/hench/blob/v0.1.0/LICENSE
-[contributing]: https://github.com/rkwap/hench/blob/v0.1.0/CONTRIBUTING.md
-[security]: https://github.com/rkwap/hench/blob/v0.1.0/SECURITY.md
-[code-of-conduct]: https://github.com/rkwap/hench/blob/v0.1.0/CODE_OF_CONDUCT.md
-[dir-hench]: https://github.com/rkwap/hench/tree/v0.1.0/crates/hench
-[dir-hench-macros]: https://github.com/rkwap/hench/tree/v0.1.0/crates/hench-macros
-[dir-hench-web]: https://github.com/rkwap/hench/tree/v0.1.0/crates/hench-web
-[dir-hench-server]: https://github.com/rkwap/hench/tree/v0.1.0/crates/hench-server
+[guide]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/README.md
+[guide-start]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/getting-started.md
+[guide-jobs]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/jobs.md
+[guide-push]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/jobs.md#enqueuing-jobs
+[guide-config]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/configuration.md
+[guide-retries]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/reliability.md
+[guide-delivery]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/reliability.md#delivery-guarantees-reliable-and-basic-fetch
+[guide-unique]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/unique-jobs.md
+[guide-periodic]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/periodic-jobs.md
+[guide-batches]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/batches.md
+[guide-limits]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/rate-limiting.md
+[guide-iterable]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/iterable-jobs.md
+[guide-metrics]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/metrics.md
+[guide-testing]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/testing.md
+[guide-dashboard]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/dashboard.md
+[guide-cli]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/cli.md
+[guide-deploy]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/deployment.md
+[guide-sidekiq]: https://github.com/rkwap/hench/blob/v0.1.1/docs/guide/sidekiq.md
+[design]: https://github.com/rkwap/hench/blob/v0.1.1/docs/DESIGN.md
+[benchmarks]: https://github.com/rkwap/hench/blob/v0.1.1/benchmarks/README.md
+[benchmarks-latency]: https://github.com/rkwap/hench/blob/v0.1.1/benchmarks/README.md#why-hench-falls-behind-with-latency
+[roadmap]: https://github.com/rkwap/hench/blob/v0.1.1/docs/ROADMAP.md
+[changelog]: https://github.com/rkwap/hench/blob/v0.1.1/CHANGELOG.md
+[license]: https://github.com/rkwap/hench/blob/v0.1.1/LICENSE
+[contributing]: https://github.com/rkwap/hench/blob/v0.1.1/CONTRIBUTING.md
+[security]: https://github.com/rkwap/hench/blob/v0.1.1/SECURITY.md
+[code-of-conduct]: https://github.com/rkwap/hench/blob/v0.1.1/CODE_OF_CONDUCT.md
+[dir-hench]: https://github.com/rkwap/hench/tree/v0.1.1/crates/hench
+[dir-hench-macros]: https://github.com/rkwap/hench/tree/v0.1.1/crates/hench-macros
+[dir-hench-web]: https://github.com/rkwap/hench/tree/v0.1.1/crates/hench-web
+[dir-hench-server]: https://github.com/rkwap/hench/tree/v0.1.1/crates/hench-server

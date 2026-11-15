@@ -12,7 +12,7 @@
 //! daylight saving rules. A process registers its crontab (the schedules given to its builder)
 //! in its group at start: created, updated, and pruned when removed from the code.
 //!
-//! [periodic.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/periodic.md
+//! [periodic.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/periodic.md
 
 #[path = "../api/periodic.rs"]
 mod api;
