@@ -1,0 +1,14 @@
+# Codecov's checks on pull requests.
+#
+# The project check compares the whole suite's coverage with the base commit's. The two
+# reports come from different CI runs: a newer toolchain counts lines differently, and tests
+# of timing-dependent paths (chaos, shutdown, outages) do not cover the same lines every run.
+# Without a tolerance, a pull request that touches a few lines fails on that drift (0.94 % on
+# one that changed nine lines of the library). The patch check, on the lines a pull request
+# changes, keeps its default.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%

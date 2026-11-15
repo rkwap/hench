@@ -506,6 +506,10 @@ _(newest first: date, scope, findings fixed)_
     `_RJEM_MALLOC_CONF`, 18 MB. The crate ignores `MALLOC_CONF`. The guide now says so.
     0.7.0 behaves the same (154 MB by default, 19 MB with the settings), and `abort_conf:true`
     stops the process on a misspelled option.
+  - `codecov.yml` (the owner's choice): the project check failed on this pull request at
+    −0.94 %, though it changed nine lines of the library and its patch check passed. Files it
+    never touched had different line counts in the base report, made two weeks earlier. The
+    project check now tolerates 2 % of drift; the patch check keeps its default.
 
 - 2026-11-02, final check of the 0.1.0 tree: GitHub CI's stable toolchain (rustc 1.99.1) has a
   clippy lint the local 1.97 lacks, `chunks_exact_to_as_chunks`, which failed CI's Clippy step
