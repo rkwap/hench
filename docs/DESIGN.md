@@ -2943,7 +2943,7 @@ the peak of the burst and afterwards (back to rest: nothing is kept per job), wi
 allocations per job (about 56, and six copies of the payload over a job's life, four of them
 alive while it runs), and the resident memory under glibc, `MALLOC_ARENA_MAX=2` and a
 preloaded jemalloc for jobs that allocate (the guide's deployment page has the figures and
-the advice). `PerformEndpoint` hands the context it received to the job when no middleware
+the advice, including the `tikv-jemallocator` crate's, whose defaults keep more than glibc). `PerformEndpoint` hands the context it received to the job when no middleware
 changed the payload, instead of a second copy of it.
 
 The plain-job throughput gate (X22 of `docs/design/pro-features.md`): `ci/throughput.sh --base

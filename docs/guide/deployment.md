@@ -74,25 +74,36 @@ memory is your jobs' memory, and two things decide how it looks from outside:
   `VmRSS` with `VmHWM` in `/proc/<pid>/status` (the busy page shows the first for each
   process): a fresh worker that is small and an old one near its high-water mark is retention,
   not a leak.
-- *What to do about it.* Use jemalloc in your worker binary: it gives freed memory back within
-  seconds. In `Cargo.toml`, `tikv-jemallocator = "0.6"`; in `main.rs`:
+- *What to do about it.* Use jemalloc in your worker binary, **with its background thread
+  on**: it then gives freed memory back within seconds. In `Cargo.toml`,
+  `tikv-jemallocator = "0.6"`; in `main.rs`:
 
   ```rust,ignore
   #[global_allocator]
   static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+  // jemalloc's settings, read at start (`#[export_name = ..]` before the 2024 edition).
+  #[allow(non_upper_case_globals)]
+  #[unsafe(export_name = "_rjem_malloc_conf")]
+  pub static malloc_conf: &[u8] =
+      b"background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:0\0";
   ```
 
-  with the settings `background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:0` (the crate's
-  documentation says how to pass them). Without a rebuild, `MALLOC_ARENA_MAX=2` in the worker's
-  environment limits glibc's arenas; it helps some workloads and not others. Measured with
-  `ci/memory.sh` (25 slots, 20,000 jobs that each allocate and free 4 MB, then idle; 1 MB of
-  heap in use at the end in every case):
+  The settings matter more than the allocator: jemalloc only returns memory when something
+  allocates or its background thread runs, so with its defaults an idle worker keeps more
+  than under glibc. They can also be set without a rebuild, in the environment variable
+  `_RJEM_MALLOC_CONF` (the crate's name for it: it ignores `MALLOC_CONF`). Staying with glibc,
+  `MALLOC_ARENA_MAX=2` in the worker's environment limits its arenas; it helps some workloads
+  and not others. Measured with `ci/memory.sh` and a build of its worker with the crate (25
+  slots, 20,000 jobs that each allocate and free 4 MB, then idle; 1 MB of heap in use at the
+  end in every case):
 
   | Allocator | Resident memory afterwards |
   |---|---|
-  | glibc (the default) | 87 MB |
+  | glibc (the default) | 87–97 MB |
   | glibc, `MALLOC_ARENA_MAX=2` | 88 MB |
-  | jemalloc, the settings above | 19 MB |
+  | `tikv-jemallocator`, default settings | 163–240 MB |
+  | `tikv-jemallocator`, the settings above (in the binary or in `_RJEM_MALLOC_CONF`) | 18 MB |
 
 Hench does not choose the allocator: a library cannot, and yours may already have one. Two
 more things keep the peak down. Keep job arguments small (pass an id, not the document): a

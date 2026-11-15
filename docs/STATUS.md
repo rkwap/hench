@@ -499,6 +499,11 @@ _(newest first: date, scope, findings fixed)_
   - Not changed: the two other avoidable copies (the arguments cloned for typed decoding)
     need a different decoding path, whose behaviour could differ for some argument types.
   - Documented: the deployment guide's Memory section.
+  - Checked afterwards with the `tikv-jemallocator` crate itself (0.6.1, a temporary build of
+    the example): with its default settings an idle worker keeps 163–240 MB, more than under
+    glibc, since nothing purges without the background thread; with `background_thread:true,
+    dirty_decay_ms:1000,muzzy_decay_ms:0`, compiled in (`_rjem_malloc_conf`) or in
+    `_RJEM_MALLOC_CONF`, 18 MB. The crate ignores `MALLOC_CONF`. The guide now says so.
 
 - 2026-11-02, final check of the 0.1.0 tree: GitHub CI's stable toolchain (rustc 1.99.1) has a
   clippy lint the local 1.97 lacks, `chunks_exact_to_as_chunks`, which failed CI's Clippy step
