@@ -30,18 +30,50 @@
   font-size: 0.8rem;
 }
 
+/* Two lines of arguments at most in the list (the tooltip and the schedule's page have the
+   rest). */
 .periodic-args {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-2);
   font-size: 0.8rem;
   overflow-wrap: anywhere;
 }
 
-.periodic-table .actions {
+/* Names and job classes wrap at their separators (the template offers the breaks), down to
+   these widths; times never wrap. */
+.periodic-table .periodic-name-cell {
+  min-width: 11rem;
+}
+
+.periodic-table .periodic-job-cell {
   min-width: 13rem;
 }
 
-.periodic-table .actions .btn + .btn {
-  margin-left: 4px;
+.periodic-table .periodic-timetable {
+  min-width: 8rem;
+}
+
+.periodic-next,
+.periodic-last,
+.periodic-run {
+  white-space: nowrap;
+}
+
+.periodic-detail {
+  margin-top: 2px;
+}
+
+/* The row's buttons are stacked in a narrow column, so that the table fits the page and its
+   actions are not scrolled out of sight. */
+.periodic-table .actions .button-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 
 .periodic-upcoming {

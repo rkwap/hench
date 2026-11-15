@@ -14,6 +14,7 @@ pub(crate) const CALLBACK_CHIP: &str = "callback";
 /// The fixed texts of the Batches pages.
 pub(crate) struct Texts {
     pub(crate) heading: &'static str,
+    pub(crate) filter_placeholder: &'static str,
     pub(crate) states: &'static str,
     pub(crate) batch: &'static str,
     pub(crate) created: &'static str,
@@ -61,6 +62,7 @@ pub(crate) struct Texts {
 /// The English texts.
 pub(crate) const EN: Texts = Texts {
     heading: "Batches",
+    filter_placeholder: "Batch ID or description",
     states: "Show",
     batch: "Batch",
     created: "Created",

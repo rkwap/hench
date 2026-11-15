@@ -68,6 +68,13 @@ started.
   execution-time distribution, heat map of execution times per minute, deploys; table views;
   in-place refresh of the last hour); `HenchWeb::metrics(bool)`, on by default
 - [x] Iteration progress of iterable jobs on the busy page, the retries and the job pages
+- [x] Polish pass after 0.1.0 (every page reviewed at 1280, 1000 and 390 px with realistic
+  data): memory sizes in the unit that fits (`format::memory`), times that never wrap, totals
+  that scale with their tile, the Periodic list fitting the page (short local times, names and
+  classes breaking at separators via `format::breakable`, stacked row actions), no sideways
+  page scroll on phones (stacked detail tables, wrapping headings and legends, tab bar
+  scrolled to the current tab), the Limits and Batches filter placeholders and selection
+  label, calmer error links, pages up to 1440 px wide
 - [x] The crate documentation lists every route (the feature tabs' included, with their
   switches and actions); a test requests each listed route
 

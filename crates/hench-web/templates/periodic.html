@@ -61,8 +61,8 @@
               <input type="checkbox" name="name" value="{{ row.name }}" data-check-item aria-label="{{ t.select_schedule }} {{ row.shown }}">
             </td>
             {% endif %}
-            <td>
-              <a class="periodic-name" href="{{ row.href }}">{{ row.shown }}</a>
+            <td class="periodic-name-cell">
+              <a class="periodic-name" href="{{ row.href }}">{% for part in row.shown_parts %}{% if !loop.first %}<wbr>{% endif %}{{ part }}{% endfor %}</a>
               <div class="periodic-chips">
                 {% if row.paused %}<span class="chip chip-muted periodic-paused">{{ t.paused }}</span>{% endif %}
                 {% if let Some(group) = row.group %}<span class="chip chip-tag periodic-source" title="{{ row.source }}">{{ group }}</span>{% else %}<span class="chip chip-tag periodic-source" title="{{ row.source }}">{{ t.api }}</span>{% endif %}
@@ -70,13 +70,13 @@
                 {% if let Some(error) = row.error %}<span class="chip chip-warn periodic-error" title="{{ error }}">{{ t.error }}</span>{% endif %}
               </div>
             </td>
-            <td>
+            <td class="periodic-timetable">
               {% if let Some(expression) = row.timetable.expression %}<code class="periodic-expression">{{ expression }}</code>{% endif %}
               <div class="muted periodic-describe">{{ row.timetable.description }}</div>
             </td>
-            <td>
+            <td class="periodic-job-cell">
               {% if let Some(job) = row.job %}
-              <span class="job-class">{{ job.class }}</span>
+              <span class="job-class">{% for part in job.class_parts %}{% if !loop.first %}<wbr>{% endif %}{{ part }}{% endfor %}</span>
               <a class="queue-name periodic-queue" href="{{ job.queue_href }}">{{ job.queue }}</a>
               {% if !job.args.is_empty() %}<div class="mono periodic-args"{% if let Some(full) = job.args_full %} title="{{ full }}"{% endif %}>{{ job.args }}</div>{% endif %}
               {% else %}
@@ -86,7 +86,7 @@
             <td class="periodic-next">
               {% if let Some(at) = row.next %}
               <time{% if !at.iso.is_empty() %} datetime="{{ at.iso }}"{% endif %} title="{{ at.utc }}" data-relative>{{ at.text }}</time>
-              <div class="muted periodic-local">{{ at.local }}</div>
+              <div class="muted periodic-local">{{ at.short }}</div>
               {% else if row.paused %}
               <span class="muted">{{ t.paused }}</span>
               {% else %}
@@ -111,6 +111,7 @@
             </td>
             {% if !layout.read_only %}
             <td class="actions">
+              <div class="button-row">
               <button type="submit" class="btn btn-sm" formaction="{{ row.href }}" name="action" value="enqueue" data-confirm="{{ t.confirm_enqueue }}">{{ t.enqueue_now }}</button>
               {% if row.paused %}
               <button type="submit" class="btn btn-sm" formaction="{{ row.href }}" name="action" value="unpause">{{ t.resume }}</button>
@@ -120,6 +121,7 @@
               {% if let Some(confirm) = row.delete_confirm %}
               <button type="submit" class="btn btn-sm btn-danger" formaction="{{ row.href }}" name="action" value="delete" data-confirm="{{ confirm }}">{{ t.delete }}</button>
               {% endif %}
+              </div>
             </td>
             {% endif %}
           </tr>

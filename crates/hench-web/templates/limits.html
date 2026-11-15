@@ -6,7 +6,12 @@
 <section class="panel" aria-labelledby="limits-heading">
   <header class="panel-head">
     <h1 id="limits-heading">{{ t.heading }} <span class="count-badge">{{ total }}</span></h1>
-    {% include "partials/filter.html" %}
+    <form role="search" method="get" action="{{ filter_action }}" class="filter-form">
+      <label for="filter-input">{{ s.filter }}</label>
+      <input id="filter-input" type="search" name="substr" value="{{ filter_value }}" placeholder="{{ t.filter_placeholder }}" maxlength="256" autocomplete="off" spellcheck="false">
+      <button type="submit" class="btn btn-sm">{{ s.apply_filter }}</button>
+      {% if !filter_value.is_empty() %}<a class="btn btn-sm btn-ghost" href="{{ filter_action }}">{{ s.clear_filter }}</a>{% endif %}
+    </form>
   </header>
   <div class="limits-summary">
     <p>{{ summary }}</p>
@@ -83,8 +88,8 @@
     {% if let Some(pager) = pager %}{% include "partials/pager.html" %}{% endif %}
     {% if !layout.read_only %}
     <div class="bulk-actions">
-      <div class="button-row" role="group" aria-label="{{ s.selected }}">
-        <span class="button-row-label">{{ s.selected }}</span>
+      <div class="button-row" role="group" aria-label="{{ t.selected }}">
+        <span class="button-row-label">{{ t.selected }}</span>
         <button type="submit" class="btn btn-danger" name="reset" value="1" data-needs-selection data-confirm="{{ t.confirm_reset_selected }}">{{ t.reset_selected }}</button>
       </div>
     </div>
