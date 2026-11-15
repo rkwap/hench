@@ -504,6 +504,8 @@ _(newest first: date, scope, findings fixed)_
     glibc, since nothing purges without the background thread; with `background_thread:true,
     dirty_decay_ms:1000,muzzy_decay_ms:0`, compiled in (`_rjem_malloc_conf`) or in
     `_RJEM_MALLOC_CONF`, 18 MB. The crate ignores `MALLOC_CONF`. The guide now says so.
+    0.7.0 behaves the same (154 MB by default, 19 MB with the settings), and `abort_conf:true`
+    stops the process on a misspelled option.
 
 - 2026-11-02, final check of the 0.1.0 tree: GitHub CI's stable toolchain (rustc 1.99.1) has a
   clippy lint the local 1.97 lacks, `chunks_exact_to_as_chunks`, which failed CI's Clippy step
