@@ -2937,6 +2937,15 @@ write, so a `kill -9` between them skips the handlers: the checker accepts a mis
 record only then, and only for a job its outcome put where it belongs (the morgue for a dead
 one).
 
+A worker's memory: `ci/memory.sh` runs `examples/memory.rs`, which pushes jobs in one process
+and runs them in another whose allocator counts the heap in use: at rest (about 0.4 MB), at
+the peak of the burst and afterwards (back to rest: nothing is kept per job), with the
+allocations per job (about 56, and six copies of the payload over a job's life, four of them
+alive while it runs), and the resident memory under glibc, `MALLOC_ARENA_MAX=2` and a
+preloaded jemalloc for jobs that allocate (the guide's deployment page has the figures and
+the advice, including the `tikv-jemallocator` crate's, whose defaults keep more than glibc). `PerformEndpoint` hands the context it received to the job when no middleware
+changed the payload, instead of a second copy of it.
+
 The plain-job throughput gate (X22 of `docs/design/pro-features.md`): `ci/throughput.sh --base
 <rev>` builds `examples/throughput.rs` (no-op jobs pushed first, then one worker with reliable
 fetch and 25 slots timed until it ran them all) at the checkout and at `<rev>`, and runs both in
