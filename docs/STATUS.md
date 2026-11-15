@@ -485,6 +485,21 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
 ## Review log
 _(newest first: date, scope, findings fixed)_
 
+- 2026-11-15, worker memory, after a production report of 200–300 MB "idle" workers (41 MB
+  fresh, 373 MB after a day, 317 MB of it in glibc arenas).
+  - Measured (`ci/memory.sh`, `examples/memory.rs`, a counting allocator):
+    - hench keeps 0.4 MB of heap at rest and returns to it after 100,000 jobs: no per-job
+      retention, about 56 allocations a job;
+    - jobs that allocate 4 MB each leave 87 MB resident under glibc with 1 MB in use, 88 MB
+      with `MALLOC_ARENA_MAX=2`, 19 MB under jemalloc: the report is allocator retention of
+      the application's peak.
+  - Fixed: a job's payload was copied seven times over its life; the copy made for the
+    context after the middleware chain is skipped when the chain left the job unchanged
+    (six copies, about 10 % fewer bytes allocated per job).
+  - Not changed: the two other avoidable copies (the arguments cloned for typed decoding)
+    need a different decoding path, whose behaviour could differ for some argument types.
+  - Documented: the deployment guide's Memory section.
+
 - 2026-11-02, final check of the 0.1.0 tree: GitHub CI's stable toolchain (rustc 1.99.1) has a
   clippy lint the local 1.97 lacks, `chunks_exact_to_as_chunks`, which failed CI's Clippy step
   on `api/sorted.rs` (`chunks_exact(2)` → `as_chunks::<2>().0`, available since 1.88); clippy

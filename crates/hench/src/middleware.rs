@@ -111,7 +111,13 @@ impl ServerEndpoint for PerformEndpoint {
     async fn call(&self, ctx: &JobContext, job: &mut JobPayload) -> Result<(), JobError> {
         crate::batch::endpoint::check(ctx).await?;
         crate::unique::endpoint::release_start(ctx).await;
-        let ctx = ctx.clone().with_payload(job.clone());
+        // The context already holds the payload unless a middleware changed it: no second copy
+        // of the job then (its arguments can be large).
+        let ctx = if ctx.payload() == &*job {
+            ctx.clone()
+        } else {
+            ctx.clone().with_payload(job.clone())
+        };
         across_boundary(self.job.perform_json(&ctx, job.args.clone())).await
     }
 }

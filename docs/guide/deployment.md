@@ -63,6 +63,43 @@ keeps the process's heartbeat key alive, so a job that blocks the runtime does n
 process look dead to the others (which would run its jobs again); but it does hold up the
 heartbeat (remote signals, stats) and, under `WatchdogSec`, the keep-alives.
 
+**Memory.** Hench itself is small: a started, idle worker keeps about 0.4 MB of heap in use
+(about 10 MB resident with the binary), and running jobs adds nothing that stays. A worker's
+memory is your jobs' memory, and two things decide how it looks from outside:
+
+- *Resident memory follows the peak, not the present.* Rust uses the system allocator, and
+  glibc's keeps most freed memory in per-thread arenas instead of returning it to the
+  operating system. A worker whose jobs once needed 500 MB at the same time still shows
+  several hundred MB when idle, with almost none of it in use. To tell the two apart, compare
+  `VmRSS` with `VmHWM` in `/proc/<pid>/status` (the busy page shows the first for each
+  process): a fresh worker that is small and an old one near its high-water mark is retention,
+  not a leak.
+- *What to do about it.* Use jemalloc in your worker binary: it gives freed memory back within
+  seconds. In `Cargo.toml`, `tikv-jemallocator = "0.6"`; in `main.rs`:
+
+  ```rust,ignore
+  #[global_allocator]
+  static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+  ```
+
+  with the settings `background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:0` (the crate's
+  documentation says how to pass them). Without a rebuild, `MALLOC_ARENA_MAX=2` in the worker's
+  environment limits glibc's arenas; it helps some workloads and not others. Measured with
+  `ci/memory.sh` (25 slots, 20,000 jobs that each allocate and free 4 MB, then idle; 1 MB of
+  heap in use at the end in every case):
+
+  | Allocator | Resident memory afterwards |
+  |---|---|
+  | glibc (the default) | 87 MB |
+  | glibc, `MALLOC_ARENA_MAX=2` | 88 MB |
+  | jemalloc, the settings above | 19 MB |
+
+Hench does not choose the allocator: a library cannot, and yours may already have one. Two
+more things keep the peak down. Keep job arguments small (pass an id, not the document): a
+running job holds about four copies of its payload, as bytes, parsed, in its context and as
+your typed arguments. And size `concurrency` for memory as well as throughput: the peak is
+what that many of your heaviest jobs need at once.
+
 ---
 
 [← The `hench` command](cli.md) · [Guide](README.md) · [Differences from Sidekiq →](sidekiq.md)
