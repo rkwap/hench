@@ -137,6 +137,18 @@
     clock.setAttribute("datetime", date.toISOString().replace(/\.\d+Z$/, "Z"));
   }
 
+  // ------------------------------------------------------------- navigation
+
+  // On narrow screens the tabs scroll sideways: bring the current one into view.
+  var currentTab = document.querySelector(".nav a[aria-current]");
+  var tabs = currentTab ? currentTab.closest(".nav") : null;
+  if (tabs && tabs.scrollWidth > tabs.clientWidth) {
+    tabs.scrollLeft = Math.max(
+      0,
+      currentTab.offsetLeft - tabs.offsetLeft - (tabs.clientWidth - currentTab.offsetWidth) / 2
+    );
+  }
+
   // ---------------------------------------------------------- confirmations
 
   document.addEventListener("click", function (event) {

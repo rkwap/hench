@@ -205,6 +205,8 @@ struct ZonedTime {
     utc: String,
     text: String,
     local: String,
+    /// `local` in its short form, for the list.
+    short: String,
 }
 
 impl ZonedTime {
@@ -217,6 +219,7 @@ impl ZonedTime {
             iso: view.iso,
             utc: view.utc,
             text: view.text,
+            short: format::short_local(&local),
             local,
         }
     }
@@ -247,6 +250,8 @@ impl TimetableView {
 /// A schedule's job, ready to print.
 struct JobView {
     class: String,
+    /// `class` in pieces a line may break between.
+    class_parts: Vec<String>,
     queue: String,
     queue_href: String,
     /// The arguments, cut for a list row.
@@ -267,6 +272,7 @@ impl JobView {
         };
         Some(Self {
             class: format::visible(&job.class).into_owned(),
+            class_parts: format::breakable(&format::visible(&job.class)),
             queue_href: ctx.url(&format!("/queues/{}", segment(queue))),
             queue: format::visible(queue).into_owned(),
             args: format::visible(&args).into_owned(),
@@ -339,6 +345,8 @@ struct ScheduleRow {
     name: String,
     /// The name for display.
     shown: String,
+    /// `shown` in pieces a line may break between.
+    shown_parts: Vec<String>,
     /// The schedule's page (also where its row actions post).
     href: String,
     paused: bool,
@@ -367,6 +375,7 @@ impl ScheduleRow {
         Self {
             name: entry.name.clone(),
             shown: format::visible(&entry.name).into_owned(),
+            shown_parts: format::breakable(&format::visible(&entry.name)),
             href: ctx.url(&format!("/periodic/{}", segment(&entry.name))),
             paused: entry.is_paused(),
             group: group.map(|group| format::visible(group).into_owned()),
@@ -1363,14 +1372,14 @@ mod tests {
             res.texts(".periodic-args"),
             [r#"{"older_than":30}"#, r#"42, "all""#]
         );
-        // Next runs: none while paused; the time in the schedule's zone.
+        // Next runs: none while paused; the time in the schedule's zone, in its short form.
         let next = res.texts(".periodic-next");
         assert_eq!(next[0], "paused");
         assert!(
-            next[1].contains("02:00:00 +01:00") || next[1].contains("02:00:00 +02:00"),
+            next[1].contains("02:00 +01:00") || next[1].contains("02:00 +02:00"),
             "{next:?}"
         );
-        assert!(next[2].ends_with("+00:00"), "{next:?}");
+        assert!(next[2].ends_with(" UTC"), "{next:?}");
         assert_eq!(res.texts(".periodic-last"), ["never", "never", "never"]);
         assert_eq!(res.texts(".periodic-run"), ["never", "never", "never"]);
         // Forms: the selection and the row actions.

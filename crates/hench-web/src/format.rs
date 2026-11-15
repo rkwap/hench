@@ -44,17 +44,25 @@ pub(crate) fn decimal(value: f64, decimals: usize) -> String {
     }
 }
 
-/// A memory size given in KB: `"0"` for nothing, KB below 100 000 KB, MB below
-/// 10 000 000 KB, GB (one decimal) above.
+/// A memory size given in KB, in the largest unit that keeps it at 1 or more: `"0"` for
+/// nothing, KB below 1 MB, MB (one decimal) below 1 GB, GB (two decimals) above.
 pub(crate) fn memory(kb: u64) -> String {
+    const MB: u64 = 1024;
+    const GB: u64 = 1024 * 1024;
     if kb == 0 {
         "0".to_owned()
-    } else if kb < 100_000 {
-        format!("{} KB", delimit(kb))
-    } else if kb < 10_000_000 {
-        format!("{} MB", delimit(kb / 1024))
+    } else if kb < MB {
+        format!("{kb} KB")
+    } else if kb < GB {
+        // Rounding may reach 1,024.0 MB just below the limit: that reads as a GB.
+        let mb = kb as f64 / MB as f64;
+        if mb >= 1023.95 {
+            "1.00 GB".to_owned()
+        } else {
+            format!("{} MB", decimal(mb, 1))
+        }
     } else {
-        format!("{} GB", decimal(kb as f64 / (1024.0 * 1024.0), 1))
+        format!("{} GB", decimal(kb as f64 / GB as f64, 2))
     }
 }
 
@@ -208,6 +216,45 @@ pub(crate) fn visible(text: &str) -> Cow<'_, str> {
         }
     }
     Cow::Owned(out)
+}
+
+/// `text` cut after each separator of a name (`::`, `_`, `-`, `.`, `/`), so that a template
+/// can offer a line break between the pieces (`<wbr>`): long job classes and schedule names
+/// then wrap at a separator instead of widening their table. The pieces joined are `text`.
+pub(crate) fn breakable(text: &str) -> Vec<String> {
+    let mut pieces = Vec::new();
+    let mut piece = String::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        piece.push(c);
+        let ends = match c {
+            ':' => chars.peek() != Some(&':') && piece.ends_with("::"),
+            '_' | '-' | '.' | '/' => true,
+            _ => false,
+        };
+        if ends && chars.peek().is_some() {
+            pieces.push(std::mem::take(&mut piece));
+        }
+    }
+    if !piece.is_empty() {
+        pieces.push(piece);
+    }
+    pieces
+}
+
+/// A time on a schedule's clock (`2026-11-16 03:30:00 +00:00`) in its short form for lists:
+/// whole minutes lose their seconds and the zero offset reads `UTC` (`2026-11-16 03:30 UTC`).
+pub(crate) fn short_local(local: &str) -> String {
+    let (time, offset) = match local.rsplit_once(' ') {
+        Some((time, zone)) if zone == "UTC" || zone.starts_with(['+', '-']) => (time, Some(zone)),
+        _ => (local, None),
+    };
+    let time = time.strip_suffix(":00").unwrap_or(time);
+    match offset {
+        Some("+00:00" | "UTC") => format!("{time} UTC"),
+        Some(offset) => format!("{time} {offset}"),
+        None => time.to_owned(),
+    }
 }
 
 /// Truncates `text` to at most `max` characters, adding an ellipsis when it was cut.
@@ -366,12 +413,16 @@ mod tests {
 
     #[test]
     fn memory_sizes_pick_a_unit() {
-        // Sidekiq's format_memory scenarios.
         assert_eq!(memory(0), "0");
         assert_eq!(memory(1), "1 KB");
-        assert_eq!(memory(99_999), "99,999 KB");
-        assert_eq!(memory(100_002), "97 MB");
-        assert_eq!(memory(10_000_001), "9.5 GB");
+        assert_eq!(memory(1_023), "1023 KB");
+        assert_eq!(memory(1_024), "1.0 MB");
+        assert_eq!(memory(45_780), "44.7 MB");
+        assert_eq!(memory(100_002), "97.7 MB");
+        assert_eq!(memory(1_048_575), "1.00 GB");
+        assert_eq!(memory(1_048_576), "1.00 GB");
+        assert_eq!(memory(10_000_001), "9.54 GB");
+        assert_eq!(memory(2_000_000_000), "1,907.35 GB");
     }
 
     #[test]
@@ -441,6 +492,44 @@ mod tests {
         assert_eq!(truncate("exactly", 7), ("exactly".to_owned(), false));
         assert_eq!(truncate("héllo wörld", 5), ("héllo…".to_owned(), true));
         assert_eq!(truncate("", 0), (String::new(), false));
+    }
+
+    #[test]
+    fn names_break_after_their_separators() {
+        assert_eq!(
+            breakable("DataGrabbers::Events::CollectorJob"),
+            ["DataGrabbers::", "Events::", "CollectorJob"]
+        );
+        assert_eq!(
+            breakable("events_details-job.v2/x"),
+            ["events_", "details-", "job.", "v2/", "x"]
+        );
+        assert_eq!(breakable("Plain"), ["Plain"]);
+        assert_eq!(breakable("a:b"), ["a:b"]);
+        assert_eq!(breakable("trailing_"), ["trailing_"]);
+        assert!(breakable("").is_empty());
+        let odd = ":::_::é::";
+        assert_eq!(breakable(odd).concat(), odd);
+    }
+
+    #[test]
+    fn schedule_times_have_a_short_form() {
+        assert_eq!(
+            short_local("2026-11-16 03:30:00 +00:00"),
+            "2026-11-16 03:30 UTC"
+        );
+        assert_eq!(
+            short_local("2026-11-16 05:00:00 -05:00"),
+            "2026-11-16 05:00 -05:00"
+        );
+        assert_eq!(
+            short_local("2026-11-15 11:23:30 +05:30"),
+            "2026-11-15 11:23:30 +05:30"
+        );
+        assert_eq!(
+            short_local("2026-11-01 12:34:00 UTC"),
+            "2026-11-01 12:34 UTC"
+        );
     }
 
     #[test]

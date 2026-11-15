@@ -10,7 +10,7 @@
 
 <section class="panel" aria-labelledby="batch-heading">
   <header class="panel-head">
-    <h1 id="batch-heading" class="mono">{{ heading }}</h1>
+    <h1 id="batch-heading" class="batch-heading">{{ heading }}</h1>
     <span class="batch-chips">{% for chip in chips %}<span class="chip {{ chip.class }}">{{ chip.text }}</span> {% endfor %}</span>
   </header>
   {% if let Some(description) = description %}<p class="batch-description-full">{{ description }}</p>{% endif %}

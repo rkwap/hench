@@ -4,7 +4,7 @@
 .limits-summary {
   display: grid;
   gap: 6px;
-  padding: 0 20px 12px;
+  padding: 0 0 12px;
 }
 
 .limits-summary p {
@@ -34,7 +34,7 @@
 
 .panel-note {
   margin: 0;
-  padding: 0 20px 8px;
+  padding: 0 0 10px;
   font-size: 0.85rem;
 }
 

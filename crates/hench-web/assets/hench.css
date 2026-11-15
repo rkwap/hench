@@ -215,6 +215,11 @@ pre,
   font-size: 0.85em;
 }
 
+/* Relative and absolute times stay on one line: "37 seconds / ago" reads badly. */
+time {
+  white-space: nowrap;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -258,7 +263,7 @@ pre,
 }
 
 .app-header-inner {
-  max-width: 1320px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 10px 20px;
   display: flex;
@@ -410,7 +415,7 @@ pre,
 .page {
   flex: 1;
   width: 100%;
-  max-width: 1320px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 22px 20px 32px;
 }
@@ -435,6 +440,17 @@ pre,
   justify-content: space-between;
   gap: 12px 20px;
   margin-bottom: 16px;
+}
+
+/* Headings and tools may shrink below their longest word, which then wraps (a job class in a
+   heading at phone width) instead of widening the page. */
+.panel-head > * {
+  min-width: 0;
+}
+
+.panel-head h1,
+.panel-head h2 {
+  overflow-wrap: break-word;
 }
 
 .panel-sub {
@@ -496,6 +512,8 @@ pre,
 
 .total {
   position: relative;
+  /* The numbers scale with their tile (below), so that a nine-digit count stays on a line. */
+  container-type: inline-size;
   padding: 12px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -531,9 +549,13 @@ pre,
 .total dd {
   margin: 2px 0 0;
   font-size: 1.45rem;
+  font-size: clamp(0.85rem, 14.5cqi, 1.45rem);
   font-weight: 650;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* --------------------------------------------------------------- notices */
@@ -735,6 +757,16 @@ code.args {
   min-width: 14rem;
   max-width: 26rem;
   overflow-wrap: anywhere;
+}
+
+/* The error links to the job like its time does; as running text it keeps the text color (a
+   column of link-colored paragraphs drowns the table). */
+.error-cell a {
+  color: var(--text-2);
+}
+
+.error-cell a:hover {
+  color: var(--link);
 }
 
 .queue-name {
@@ -1103,6 +1135,7 @@ input[type="search"] {
   margin: 2px 0 0;
   font-size: 1.2rem;
   font-weight: 650;
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
@@ -1136,10 +1169,20 @@ input[type="search"] {
   font-size: 0.85rem;
 }
 
+.legend {
+  max-width: 100%;
+}
+
 .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.legend-key {
+  flex: none;
 }
 
 .legend-key {
@@ -1529,7 +1572,7 @@ h1 .job-class {
   flex-wrap: wrap;
   justify-content: center;
   gap: 6px 22px;
-  max-width: 1320px;
+  max-width: 1440px;
   margin: 0 auto;
   padding: 14px 20px;
   list-style: none;
@@ -1578,8 +1621,14 @@ h1 .job-class {
     padding: 8px 10px;
   }
 
-  .total dd {
-    font-size: 1.15rem;
+  /* The tabs scroll sideways: the fading edge says that there are more. */
+  .nav {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+
+  .nav ul {
+    padding-right: 28px;
   }
 
   .panel {
@@ -1593,6 +1642,28 @@ h1 .job-class {
   input[type="search"] {
     min-width: 0;
     flex: 1;
+  }
+}
+
+/* Phones: a detail table's label sits above its value, which then has the whole width. */
+@media (max-width: 600px) {
+  .kv,
+  .kv tbody,
+  .kv tr,
+  .kv th,
+  .kv td {
+    display: block;
+    width: auto;
+  }
+
+  .kv th {
+    padding-bottom: 0;
+    font-size: 0.8rem;
+  }
+
+  .kv td {
+    padding-top: 2px;
+    border-top: 0;
   }
 }
 

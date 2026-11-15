@@ -4,7 +4,7 @@
 .batches-summary {
   display: grid;
   gap: 6px;
-  padding: 0 20px 12px;
+  padding: 0 0 12px;
 }
 
 .batches-summary p {
@@ -44,7 +44,7 @@
 
 .batch-description-full {
   margin: 0;
-  padding: 0 20px 12px;
+  padding: 0 0 12px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -84,7 +84,11 @@
 }
 
 .batch-progress {
-  padding: 0 20px 12px;
+  padding: 0 0 12px;
+}
+
+.batch-heading {
+  overflow-wrap: anywhere;
 }
 
 .progress-legend {
@@ -160,7 +164,8 @@
 
 .batch-pending {
   margin: 0;
-  padding: 0 20px 14px 40px;
+  padding: 0;
+  list-style: none;
   display: grid;
   gap: 6px;
 }
@@ -174,7 +179,7 @@
 
 .panel-note {
   margin: 0;
-  padding: 0 20px 8px;
+  padding: 0 0 10px;
   font-size: 0.85rem;
 }
 

@@ -12,8 +12,7 @@ its library, which exists for that binary.
 
 ## [Unreleased]
 
-### Changed
-
+Planned for 0.2 (the [roadmap](docs/ROADMAP.md) says what each item brings and
 - A running job holds one copy less of its payload (the context is reused when no server
   middleware changed the job): about 10 % less memory allocated per job, more for large
   arguments.
