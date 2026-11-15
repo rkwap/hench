@@ -63,6 +63,57 @@ keeps the process's heartbeat key alive, so a job that blocks the runtime does n
 process look dead to the others (which would run its jobs again); but it does hold up the
 heartbeat (remote signals, stats) and, under `WatchdogSec`, the keep-alives.
 
+**Memory.** Hench itself is small: a started, idle worker keeps about 0.4 MB of heap in use
+(about 10 MB resident with the binary), and running jobs adds nothing that stays. A worker's
+memory is your jobs' memory, and two things decide how it looks from outside:
+
+- *Resident memory follows the peak, not the present.* Rust uses the system allocator, and
+  glibc's keeps most freed memory in per-thread arenas instead of returning it to the
+  operating system. A worker whose jobs once needed 500 MB at the same time still shows
+  several hundred MB when idle, with almost none of it in use. To tell the two apart, compare
+  `VmRSS` with `VmHWM` in `/proc/<pid>/status` (the busy page shows the first for each
+  process): a fresh worker that is small and an old one near its high-water mark is retention,
+  not a leak.
+- *What to do about it.* Use jemalloc in your worker binary, **with its background thread
+  on**: it then gives freed memory back within seconds. In `Cargo.toml`,
+  `tikv-jemallocator = "0.6"`; in `main.rs`:
+
+  ```rust,ignore
+  #[global_allocator]
+  static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+  // jemalloc's settings, read at start (`#[export_name = ..]` before the 2024 edition).
+  #[allow(non_upper_case_globals)]
+  #[unsafe(export_name = "_rjem_malloc_conf")]
+  pub static malloc_conf: &[u8] =
+      b"background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:0,abort_conf:true\0";
+  ```
+
+  The settings matter more than the allocator: jemalloc only returns memory when something
+  allocates or its background thread runs, so with its defaults an idle worker keeps more
+  than under glibc. They can also be set without a rebuild, in the environment variable
+  `_RJEM_MALLOC_CONF` (the crate's name for it: it ignores `MALLOC_CONF`). `abort_conf:true`
+  stops the process at start on a misspelled option; a variable that never reaches the
+  process is silent, so check a running worker for its `jemalloc_bg_thd` threads
+  (`cat /proc/<pid>/task/*/comm`). Staying with glibc,
+  `MALLOC_ARENA_MAX=2` in the worker's environment limits its arenas; it helps some workloads
+  and not others. Measured with `ci/memory.sh` and a build of its worker with the crate (25
+  slots, 20,000 jobs that each allocate and free 4 MB, then idle; 1 MB of heap in use at the
+  end in every case):
+
+  | Allocator | Resident memory afterwards |
+  |---|---|
+  | glibc (the default) | 87–97 MB |
+  | glibc, `MALLOC_ARENA_MAX=2` | 88 MB |
+  | `tikv-jemallocator` (0.6.1 and 0.7.0), default settings | 154–240 MB |
+  | `tikv-jemallocator`, the settings above (in the binary or in `_RJEM_MALLOC_CONF`) | 18 MB |
+
+Hench does not choose the allocator: a library cannot, and yours may already have one. Two
+more things keep the peak down. Keep job arguments small (pass an id, not the document): a
+running job holds about four copies of its payload, as bytes, parsed, in its context and as
+your typed arguments. And size `concurrency` for memory as well as throughput: the peak is
+what that many of your heaviest jobs need at once.
+
 ---
 
 [← The `hench` command](cli.md) · [Guide](README.md) · [Differences from Sidekiq →](sidekiq.md)

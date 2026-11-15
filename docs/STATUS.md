@@ -485,6 +485,32 @@ The owner deferred it to 0.2 when releasing 0.1.0; the README's roadmap and `CHA
 ## Review log
 _(newest first: date, scope, findings fixed)_
 
+- 2026-11-15, worker memory, after a production report of 200–300 MB "idle" workers (41 MB
+  fresh, 373 MB after a day, 317 MB of it in glibc arenas).
+  - Measured (`ci/memory.sh`, `examples/memory.rs`, a counting allocator):
+    - hench keeps 0.4 MB of heap at rest and returns to it after 100,000 jobs: no per-job
+      retention, about 56 allocations a job;
+    - jobs that allocate 4 MB each leave 87 MB resident under glibc with 1 MB in use, 88 MB
+      with `MALLOC_ARENA_MAX=2`, 19 MB under jemalloc: the report is allocator retention of
+      the application's peak.
+  - Fixed: a job's payload was copied seven times over its life; the copy made for the
+    context after the middleware chain is skipped when the chain left the job unchanged
+    (six copies, about 10 % fewer bytes allocated per job).
+  - Not changed: the two other avoidable copies (the arguments cloned for typed decoding)
+    need a different decoding path, whose behaviour could differ for some argument types.
+  - Documented: the deployment guide's Memory section.
+  - Checked afterwards with the `tikv-jemallocator` crate itself (0.6.1, a temporary build of
+    the example): with its default settings an idle worker keeps 163–240 MB, more than under
+    glibc, since nothing purges without the background thread; with `background_thread:true,
+    dirty_decay_ms:1000,muzzy_decay_ms:0`, compiled in (`_rjem_malloc_conf`) or in
+    `_RJEM_MALLOC_CONF`, 18 MB. The crate ignores `MALLOC_CONF`. The guide now says so.
+    0.7.0 behaves the same (154 MB by default, 19 MB with the settings), and `abort_conf:true`
+    stops the process on a misspelled option.
+  - `codecov.yml` (the owner's choice): the project check failed on this pull request at
+    −0.94 %, though it changed nine lines of the library and its patch check passed. Files it
+    never touched had different line counts in the base report, made two weeks earlier. The
+    project check now tolerates 2 % of drift; the patch check keeps its default.
+
 - 2026-11-02, final check of the 0.1.0 tree: GitHub CI's stable toolchain (rustc 1.99.1) has a
   clippy lint the local 1.97 lacks, `chunks_exact_to_as_chunks`, which failed CI's Clippy step
   on `api/sorted.rs` (`chunks_exact(2)` → `as_chunks::<2>().0`, available since 1.88); clippy
