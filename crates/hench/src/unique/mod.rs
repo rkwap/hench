@@ -85,8 +85,8 @@
 //! [`Testing::unique_jobs(false)`](crate::testing::Testing::unique_jobs).
 //!
 //! [`JobOptions::unique_for`]: crate::JobOptions::unique_for
-//! [unique.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/unique.md
-//! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
+//! [unique.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/unique.md
+//! [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/DESIGN.md
 
 pub(crate) mod api;
 pub(crate) mod endpoint;
@@ -143,7 +143,7 @@ pub(crate) const FORMAT: Option<u32> = Some(1);
 /// );
 /// ```
 ///
-/// [unique.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/unique.md
+/// [unique.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/unique.md
 pub fn digest(class: &str, queue: Option<&str>, key: &Value) -> Result<String> {
     crate::canonical::digest(&serde_json::json!([DIGEST_VERSION, class, queue, key]))
 }

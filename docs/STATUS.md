@@ -3,8 +3,10 @@
 Tracks progress against `docs/DESIGN.md`. Update in the same commit as the work.
 Legend: `[ ]` todo · `[~]` in progress / partial · `[x]` done and tested.
 
-**Release state: 0.1.0 (2026-11-03), published on crates.io and tagged `v0.1.0`.** The four
-crates are at 0.1.0, with `CHANGELOG.md` (its 0.1.0 entry: features, known limitations,
+**Release state: 0.1.1 prepared (2026-11-15) on `chore/release-0.1.1`: version, links and
+changelog are in place; the tag `v0.1.1` and `cargo publish` are the owner's. 0.1.0
+(2026-11-03) is published on crates.io and tagged `v0.1.0`.** The four
+crates are at 0.1.1, with `CHANGELOG.md` (its 0.1.0 entry: features, known limitations,
 requirements) and the roadmap (`docs/ROADMAP.md`); every gate passes (review log, release review round 4, and the
 release gate on `main`; two timing-sensitive tests that failed once under load have been fixed
 since). The repository is public.

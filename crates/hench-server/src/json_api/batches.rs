@@ -12,7 +12,7 @@
 //!   cancelled batches>}`; `409` when it already succeeded, `404` when it does not exist, `403`
 //!   when the API is read-only (and for cross-site requests, as every change).
 //!
-//! [batches.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/batches.md
+//! [batches.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/batches.md
 
 use std::sync::Arc;
 

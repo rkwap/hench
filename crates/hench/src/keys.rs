@@ -37,7 +37,7 @@
 //! configuration (periodic schedules, `queue-limits`) never expires; the per-minute counters
 //! expire after [`FEATURE_MINUTE_TTL`].
 //!
-//! [pro-features.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/pro-features.md
+//! [pro-features.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/pro-features.md
 
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use std::time::Duration;

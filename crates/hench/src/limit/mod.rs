@@ -26,7 +26,7 @@
 //! [`Limits`] (`Api::limits`) lists the identities in use with their counters, holders and wait
 //! lines, and resets them.
 //!
-//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/ratelimit.md
+//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/ratelimit.md
 
 // The `Limits` API, in the API's directory (`api/limits.rs`) but compiled here, with the
 // feature it reads.

@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/hench", "crates/hench-macros", "crates/hench-web", "crates/hench-server", "benchmarks"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 license = "MIT"
@@ -13,11 +13,11 @@ keywords = ["background-jobs", "job-queue", "redis", "sidekiq", "async"]
 categories = ["asynchronous", "concurrency", "web-programming"]
 
 [workspace.dependencies]
-hench = { path = "crates/hench", version = "0.1.0" }
+hench = { path = "crates/hench", version = "0.1.1" }
 # `=`: the expansion of `#[hench::job]` uses `hench::__private`, so each hench release works
 # with its own hench-macros only (released together; see docs/RELEASING.md).
-hench-macros = { path = "crates/hench-macros", version = "=0.1.0" }
-hench-web = { path = "crates/hench-web", version = "0.1.0" }
+hench-macros = { path = "crates/hench-macros", version = "=0.1.1" }
+hench-web = { path = "crates/hench-web", version = "0.1.1" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "net"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }

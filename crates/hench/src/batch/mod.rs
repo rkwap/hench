@@ -33,7 +33,7 @@
 //! **Rollout**: workers count members only if they understand batches (the heartbeat
 //! advertises `features.batches = 1`); upgrade every worker before defining batches.
 //!
-//! [batches.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/batches.md
+//! [batches.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/batches.md
 
 pub(crate) mod account;
 pub(crate) mod api;

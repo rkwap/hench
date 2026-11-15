@@ -691,7 +691,7 @@ impl Batches {
     /// anyway (but for that descendant's own subtree), the events of the batches cancelled are
     /// dispatched, and the first refusal is returned: cancelling again is harmless.
     ///
-    /// [batches.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/batches.md
+    /// [batches.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/batches.md
     pub async fn cancel(&self, bid: &str) -> Result<usize> {
         let root = scripts::cancel(self.redis(), bid).await?;
         let mut cancelled = usize::from(root.first);

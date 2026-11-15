@@ -16,7 +16,7 @@ pub(crate) const MAX_UNIQUE_FOR_SECS: u64 = 1_000_000_000;
 
 /// When a unique job's lock is released (the lifecycle table of [unique.md] §2.3).
 ///
-/// [unique.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/unique.md
+/// [unique.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/unique.md
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum UniqueUntil {
@@ -76,7 +76,7 @@ impl<'de> Deserialize<'de> for UniqueUntil {
 
 /// What a push does when another job holds the lock ([unique.md] §2.5).
 ///
-/// [unique.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/unique.md
+/// [unique.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/unique.md
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum OnConflict {

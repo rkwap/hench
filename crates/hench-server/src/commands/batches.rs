@@ -1,7 +1,7 @@
 //! `hench batches`: the batches (list, show, cancel, delete, skip, dispatch), and `hench stats
 //! batches` ([batches.md] §2.13).
 //!
-//! [batches.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/batches.md
+//! [batches.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/batches.md
 //!
 //! Descriptions, classes, errors and jids come from Redis (jids are whatever the pushing code
 //! chose): they are printed with their control characters spelled out.

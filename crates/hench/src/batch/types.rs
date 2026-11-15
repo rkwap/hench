@@ -16,7 +16,7 @@ pub const WORKFLOW_NEXT: &str = "hench::WorkflowNext";
 
 /// A batch event, for which callbacks run ([batches.md] §2.2.4).
 ///
-/// [batches.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/batches.md
+/// [batches.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/batches.md
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]

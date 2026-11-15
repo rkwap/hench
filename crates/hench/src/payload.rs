@@ -29,7 +29,7 @@ use crate::unique::UniqueOption;
 /// When pushing, an empty [`jid`](Self::jid) means "generate one" and an empty
 /// [`queue`](Self::queue) means "use the job's default queue".
 ///
-/// [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
+/// [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/DESIGN.md
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct JobPayload {

@@ -105,7 +105,7 @@ pub struct ErrorContext<'a> {
     /// What hench was doing, e.g. `"job failed"` (a job's failure), `"could not fetch jobs"`,
     /// `"could not enqueue scheduled jobs"`; [DESIGN.md] §5 lists them all.
     ///
-    /// [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/DESIGN.md
+    /// [DESIGN.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/DESIGN.md
     pub context: &'a str,
     /// The job involved, if any.
     pub job: Option<&'a JobPayload>,

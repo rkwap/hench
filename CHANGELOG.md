@@ -12,14 +12,6 @@ its library, which exists for that binary.
 
 ## [Unreleased]
 
-Planned for 0.2 (the [roadmap](docs/ROADMAP.md) says what each item brings and
-- A running job holds one copy less of its payload (the context is reused when no server
-  middleware changed the job): about 10 % less memory allocated per job, more for large
-  arguments.
-- The deployment guide has a **Memory** section: what a worker's resident memory means, how to
-  tell allocator retention from a leak, and why to use jemalloc (with measurements from the
-  new `ci/memory.sh` and `examples/memory.rs`).
-
 Nothing yet. Planned for 0.2 (the [roadmap](docs/ROADMAP.md) says what each item brings and
 what to do until then):
 
@@ -31,6 +23,41 @@ what to do until then):
   and a process-wide cache of cancelled batches.
 - **Batch tags**, searchable on Redis 7.4 or newer.
 - **A lean lock mode for unique jobs**, if users ask for it.
+
+## [0.1.1] - 2026-11-15
+
+A patch release: the dashboard reads better, and a running job uses less memory. Nothing
+changes in the API, the command line or the data in Redis.
+
+### Added
+
+- The deployment guide has a **Memory** section: what a worker's resident memory means, how to
+  tell allocator retention from a leak, and why to use jemalloc (with measurements from the
+  new `ci/memory.sh` and `examples/memory.rs`).
+
+### Changed
+
+- A running job holds one copy less of its payload (the context is reused when no server
+  middleware changed the job): about 10 % less memory allocated per job, more for large
+  arguments.
+- **Dashboard polish** (`hench-web`):
+  - Memory sizes use the unit that fits: `44.7 MB` and `1.86 GB`, where 0.1.0 showed
+    `45,780 KB` (KB up to 100,000 KB) and whole megabytes.
+  - Times never wrap inside a table cell (`37 seconds ago`), and the totals at the top of each
+    page keep a nine-digit count on one line by scaling with their tile.
+  - The Periodic list fits the page: next runs show a short time on the schedule's clock
+    (`2026-11-16 03:30 UTC`), long schedule names and job classes wrap at their separators
+    (`::`, `_`, `-`), arguments take two lines at most, and each row's actions are stacked in
+    a narrow column instead of being scrolled out of sight.
+  - Phones: no page scrolls sideways any more (long job classes in headings and chart
+    legends wrap), detail tables put each label above its value, and the tab bar fades at its
+    edge and scrolls to the current tab.
+  - The Limits and Batches filters say what they match (`Limit name or key`,
+    `Batch ID or description`, not `Any job content`), the Limits selection is labelled
+    `Selected limits`, a batch's page has a heading of the usual size, and the summaries of
+    both pages line up with their panels.
+  - Errors in the retries and dead lists keep the text color (they still link to the job),
+    and pages are up to 1440 px wide (1320 px before).
 
 ## [0.1.0] - 2026-11-03
 
@@ -155,5 +182,6 @@ batches and rate limiting, and a dashboard.
 - Redis 6.2 or newer, with `maxmemory-policy noeviction` (workers warn otherwise) and
   persistence (AOF) if jobs must survive a Redis restart.
 
-[Unreleased]: https://github.com/rkwap/hench/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rkwap/hench/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/rkwap/hench/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rkwap/hench/releases/tag/v0.1.0

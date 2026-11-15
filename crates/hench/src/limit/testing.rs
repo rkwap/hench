@@ -19,7 +19,7 @@
 //! # Ok::<(), hench::Error>(()) }).unwrap();
 //! ```
 //!
-//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.0/docs/design/ratelimit.md
+//! [ratelimit.md]: https://github.com/rkwap/hench/blob/v0.1.1/docs/design/ratelimit.md
 
 use std::fmt;
 use std::sync::Arc;
